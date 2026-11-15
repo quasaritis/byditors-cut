@@ -157,3 +157,45 @@ def test_state_and_dashboard(client):
     assert client.get("/").status_code == 200
     st = client.get("/api/state").json()
     assert "counts" in st and "tools" in st
+
+
+# ---------------------------------------------------------------- bring-your-own AI key (e.g. a free Gemini key)
+
+class _Resp:
+    def __init__(self, code, data, headers=None):
+        import httpx
+        self.status_code, self._d, self.headers = code, data, headers or {}
+        self.request = httpx.Request("POST", "https://generativelanguage.googleapis.com/x")
+
+    def json(self):
+        return self._d
+
+    def raise_for_status(self):
+        import httpx
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("err", request=self.request, response=self)
+
+
+def test_gemini_key_lists_models_and_answers(monkeypatch):
+    import httpx
+    from bcut import ai
+    db.kv_set("ai", {"provider": "gemini", "key": "AIza-test", "model": ""})
+    seen = {}
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: _Resp(200, {"data": [
+        {"id": "models/gemini-3.8-flash"}, {"id": "models/gemini-4-argon"}, {"id": "models/text-embedding-004"}]}))
+    assert ai.list_models("gemini", "AIza-test") == ["gemini-3.8-flash", "gemini-4-argon"]
+    calls = []
+
+    def post(url, **kw):
+        calls.append(url)
+        seen.update(kw)
+        if len(calls) == 1:
+            return _Resp(429, {}, {"retry-after": "0"})   # free tier: too many requests, then fine
+        return _Resp(200, {"choices": [{"message": {"content": '```json\n{"ok": true}\n```'}}]})
+    monkeypatch.setattr(httpx, "post", post)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    assert ai.ask_json("sys", "user") == {"ok": True}
+    assert calls[-1].startswith("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions")
+    assert seen["headers"]["authorization"] == "Bearer AIza-test"
+    assert seen["json"]["model"] == "gemini-3.8-flash"     # default when no model is chosen
+    db.kv_set("ai", {})

@@ -561,8 +561,8 @@ async function viewSettings() {
   <div class="sect"><div><h2>AI that picks clips</h2><p>Optional. Without it, clips are picked from loudness, chaos and chat. With it, the AI reads the transcript, writes hooks and captions, and flags risky moments. A fast, cheap model is right.</p></div>
     <div class="panel"><form id="f-ai" class="fgrid">
       <div><label class="f" for="ai-p">Service</label><select class="field" id="ai-p" name="provider"><option value="">None</option>${Object.entries(d.ai.providers).map(([k,l]) => `<option value="${k}" ${d.ai.provider === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
-      <div><label class="f" for="ai-m">Model</label><input class="field" id="ai-m" name="model" value="${esc(d.ai.model)}" placeholder="for example gemini-2.5-flash"></div>
-      <div class="wide"><label class="f" for="ai-k">API key</label><input class="field" id="ai-k" name="key" type="password" autocomplete="off" placeholder="${d.ai.has_key ? "Saved. Paste a new one to replace it." : "Paste your key"}"></div>
+      <div><label class="f" for="ai-k">API key</label><input class="field" id="ai-k" name="key" type="password" autocomplete="off" placeholder="${d.ai.has_key ? "Saved. Paste a new one to replace it." : "Paste your key"}"><p class="hint" id="ai-keyhint"></p></div>
+      <div class="wide"><label class="f" for="ai-m">Model</label><div style="display:flex;gap:8px"><input class="field" id="ai-m" name="model" list="ai-list" value="${esc(d.ai.model)}" placeholder="Press Find models, or type a model id"><datalist id="ai-list"></datalist><button type="button" class="btn" id="ai-find">Find models</button></div><p class="hint">Fast, cheap models are listed first. That's the right kind for picking clips.</p></div>
       <div class="wide"><label class="f" for="ai-b">Address (custom service only)</label><input class="field" id="ai-b" name="base_url" value="${esc(d.ai.base_url)}" placeholder="https://…/v1"></div>
       <div class="wide acts"><button class="btn primary">Save and test</button></div></form></div></div>
   <div class="sect"><div><h2>On this PC</h2><p>Each one is optional and makes clips or checks better. Install, then restart Byditors Cut.</p></div>
@@ -571,6 +571,16 @@ async function viewSettings() {
       ${tool("Song identification", t.audd, `Set <span class="code">AUDD_API_TOKEN</span> in .env (audd.io) to name copyrighted songs.`)}
       ${tool("Moderation model", t.moderation, `Set <span class="code">OPENAI_MODERATION_KEY</span> in .env. The moderation endpoint is free with an OpenAI key.`)}</div></div>`;
   $("#f-pol").onsubmit = e => { e.preventDefault(); act(e.submitter, () => api("/api/settings/guard", {method: "POST", body: Object.fromEntries(new FormData(e.target))}), "Guard rules saved"); };
+  const keyHint = () => { const p = $("#ai-p").value, url = d.ai.key_pages[p];
+    $("#ai-keyhint").innerHTML = p === "gemini" ? `Free key, no card: <a href="${url}" target="_blank" rel="noopener">aistudio.google.com/apikey</a>` : p === "ollama" ? "Runs on this PC, no key needed." : url ? `Get one at <a href="${url}" target="_blank" rel="noopener">${url.replace("https://","")}</a>` : "";
+    if (!$("#ai-m").value && d.ai.defaults[p]) $("#ai-m").placeholder = `for example ${d.ai.defaults[p]}`; };
+  $("#ai-p").onchange = keyHint; keyHint();
+  $("#ai-find").onclick = e => act(e.currentTarget, async () => {
+    const r = await api("/api/settings/ai/models", {method: "POST", body: {provider: $("#ai-p").value, key: $("#ai-k").value, base_url: $("#ai-b").value}});
+    $("#ai-list").innerHTML = r.models.map(m => `<option value="${esc(m)}">`).join("");
+    if (!$("#ai-m").value && r.models.length) $("#ai-m").value = r.models[0];
+    toast(`${r.models.length} models found. Pick one in the Model box.`);
+  });
   $("#f-ai").onsubmit = e => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.test = !!b.provider; act(e.submitter, async () => { await api("/api/settings/ai", {method: "POST", body: b}); loadState(); }, "Saved and working"); };
 }
 

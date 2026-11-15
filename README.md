@@ -44,7 +44,7 @@ Paste a link in the bar at the top and press **Make clips**, or press **Upload**
 
 | Add | How | What you get |
 |---|---|---|
-| An AI service | Dashboard → Guard & settings → AI | Picks from the transcript instead of only loudness, writes hooks and per-platform captions, flags risky moments. Gemini Flash, GPT-4.1 mini, Groq, OpenRouter, Claude, or a local Ollama model all work. |
+| An AI key, any model | Dashboard → Guard & settings → AI: pick the service, paste the key, press **Find models** | Picks from the transcript instead of only loudness, writes hooks and per-platform captions, flags risky moments. A **free Gemini key** from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) works (no card); so do OpenAI, Groq, OpenRouter, Grok, Claude, a local Ollama model, or anything that speaks the OpenAI format. Free-tier "too many requests" answers are waited out and retried. |
 | Song identification | `AUDD_API_TOKEN` in `.env` | Names copyrighted songs, so they're blocked for certain instead of "sounds like music" |
 | Music removal | `pip install demucs` | **Remove music, keep voice** button on flagged clips |
 | Moderation model | `OPENAI_MODERATION_KEY` in `.env` | Catches hate, sexual content and violence the word lists miss |

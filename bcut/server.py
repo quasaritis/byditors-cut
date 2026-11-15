@@ -546,6 +546,23 @@ async def save_ai(request: Request):
     return ai.public_settings()
 
 
+@app.post("/api/settings/ai/models")
+async def ai_models(request: Request):
+    """List the models a key can use. Uses the key typed in the form, or the saved one."""
+    b = await _body(request)
+    saved = ai.settings()
+    prov = b.get("provider") or saved["provider"]
+    if prov not in ai.PROVIDERS:
+        raise HTTPException(400, "Pick an AI service first")
+    key = str(b.get("key") or (saved["key"] if prov == saved["provider"] else "")).strip()
+    if not key and prov != "ollama":
+        raise HTTPException(400, "Paste the API key first")
+    try:
+        return {"models": ai.list_models(prov, key, str(b.get("base_url") or ""))}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Couldn't get the model list: {str(e)[:200]}")
+
+
 @app.post("/api/settings/guard")
 async def save_guard(request: Request):
     b = await _body(request)
