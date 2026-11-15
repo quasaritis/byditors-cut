@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from .. import config
+from .. import tools
 
 LEXICON = Path(__file__).with_name("lexicon.json")
 
@@ -53,7 +53,7 @@ def scan_words(text: str) -> dict[str, list[str]]:
 
 
 def moderate(text: str) -> dict[str, float]:
-    key = config.OPENAI_MODERATION_KEY
+    key = tools.key("moderation")
     if not key or not text.strip():
         return {}
     try:

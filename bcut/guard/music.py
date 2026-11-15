@@ -88,7 +88,10 @@ def music_ranges(curve: np.ndarray, threshold: float = 0.55, min_len: int = 3) -
 
 def identify(path: Path, at: float, length: float = 12.0) -> dict | None:
     """Ask AudD which song this is. Returns {"artist","title"} or None. Needs AUDD_API_TOKEN."""
-    if not config.AUDD_TOKEN:
+    from .. import tools
+
+    token = tools.key("audd")
+    if not token:
         return None
     import httpx
 
@@ -99,7 +102,7 @@ def identify(path: Path, at: float, length: float = 12.0) -> dict | None:
         if not snip.exists():
             return None
         try:
-            r = httpx.post("https://api.audd.io/", data={"api_token": config.AUDD_TOKEN, "return": ""},
+            r = httpx.post("https://api.audd.io/", data={"api_token": token, "return": ""},
                            files={"file": snip.read_bytes()}, timeout=40)
             res = (r.json() or {}).get("result")
         except Exception:  # noqa: BLE001
@@ -126,11 +129,9 @@ def analyse(path: Path) -> dict:
 # ---------------------------------------------------------------- removal
 
 def can_separate() -> bool:
-    try:
-        import demucs  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    from .. import tools
+
+    return tools.installed("demucs")
 
 
 def strip_music(video: Path, out: Path, ranges: list[tuple[float, float]] | None = None) -> str:

@@ -15,11 +15,9 @@ _lock = threading.Lock()
 
 
 def available() -> bool:
-    try:
-        import faster_whisper  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    from . import tools
+
+    return tools.installed("whisper")
 
 
 def _load():

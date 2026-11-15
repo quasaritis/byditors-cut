@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -199,3 +200,36 @@ def test_gemini_key_lists_models_and_answers(monkeypatch):
     assert seen["headers"]["authorization"] == "Bearer AIza-test"
     assert seen["json"]["model"] == "gemini-3.8-flash"     # default when no model is chosen
     db.kv_set("ai", {})
+
+
+# ---------------------------------------------------------------- add-ons and keys from the dashboard
+
+def test_keys_pasted_in_dashboard_are_used(client):
+    from bcut import tools
+    r = client.post("/api/settings/keys", json={"audd": "tok-123"})
+    assert r.json()["audd"] is True and tools.key("audd") == "tok-123"
+    assert client.get("/api/state").json()["tools"]["audd"] is True
+    client.post("/api/settings/keys", json={"audd": ""})
+    assert not tools.key("audd")
+
+
+def test_install_button_runs_pip_in_the_apps_python(client, monkeypatch):
+    import subprocess as sp
+    from bcut import tools
+    calls = []
+
+    class FakeProc:
+        stdout = iter(["Collecting demucs\n", "Successfully installed demucs\n"])
+
+        def wait(self):
+            return 0
+    monkeypatch.setattr(sp, "Popen", lambda cmd, **kw: calls.append(cmd) or FakeProc())
+    monkeypatch.setattr(tools, "installed", lambda name: True)
+    assert client.post("/api/tools/demucs/install").status_code == 200
+    for _ in range(50):
+        if tools.status()["demucs"]["state"] != "installing":
+            break
+        time.sleep(0.05)
+    assert tools.status()["demucs"]["state"] == "done"
+    assert calls[0][:4] == [sys.executable, "-m", "pip", "install"] and "demucs>=4.0" in calls[0]
+    assert client.post("/api/tools/rm-rf/install").status_code == 404

@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import ai, config, db, guard, live, media, pipeline, publish, radar, transcribe
+from . import ai, config, db, guard, live, media, pipeline, publish, radar, tools, transcribe
 from .guard import music, rules
 from .publish import platforms
 
@@ -119,7 +119,8 @@ def state():
         "events": db.query("SELECT * FROM events ORDER BY id DESC LIMIT 12"),
         "tools": {"ffmpeg": bool(shutil.which("ffmpeg")), "whisper": transcribe.available(),
                   "demucs": music.can_separate(), "ai": ai.enabled(), "ai_provider": ai.settings()["provider"],
-                  "audd": bool(config.AUDD_TOKEN), "moderation": bool(config.OPENAI_MODERATION_KEY)},
+                  "audd": bool(tools.key("audd")), "moderation": bool(tools.key("moderation")),
+                  "installing": tools.status()},
         "accounts": len(db.query("SELECT id FROM accounts")),
         "streamers": len(db.query("SELECT id FROM streamers")),
     }
@@ -561,6 +562,22 @@ async def ai_models(request: Request):
         return {"models": ai.list_models(prov, key, str(b.get("base_url") or ""))}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"Couldn't get the model list: {str(e)[:200]}")
+
+
+@app.post("/api/tools/{name}/install")
+def install_tool(name: str):
+    if name not in tools.PACKAGES:
+        raise HTTPException(404, "Unknown add-on")
+    return tools.install(name)
+
+
+@app.post("/api/settings/keys")
+async def save_keys(request: Request):
+    b = await _body(request)
+    for name in tools.KEYS:
+        if name in b:
+            tools.set_key(name, str(b[name] or ""))
+    return {k: bool(tools.key(k)) for k in tools.KEYS}
 
 
 @app.post("/api/settings/guard")
