@@ -1,0 +1,19 @@
+BYDITORS CUT - START HERE
+
+Windows:
+  1. Unzip this folder somewhere (for example Documents). Do not run it from inside the zip.
+  2. Double-click start.bat.
+     If Windows says "Windows protected your PC", click More info, then Run anyway.
+  3. The first time, it installs what it needs by itself (Python, ffmpeg, the app).
+     This takes about 5-10 minutes and needs internet. Later starts take a few seconds.
+  4. Your browser opens the app at http://127.0.0.1:8777
+     Keep the black window open while you use it. Close it to stop the app.
+
+Mac / Linux:
+  Open Terminal in this folder and run:  ./start.sh
+
+Free AI (optional, makes clips smarter):
+  Get a free key at https://aistudio.google.com/apikey
+  In the app: Guard & settings > AI > Google Gemini > paste key > Find models > Save and test.
+
+Posting to Instagram / YouTube / TikTok / Facebook: see docs\CONNECT_ACCOUNTS.md
