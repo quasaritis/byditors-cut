@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Byditors Cut</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23000'/%3E%3Cpath d='M9 7h8.5a5 5 0 0 1 2.6 9.3A5.2 5.2 0 0 1 17.8 26H9z' fill='%23fff'/%3E%3Cpath d='M6 23 26 9' stroke='%23c6f24e' stroke-width='3'/%3E%3C/svg%3E">
+<style>
+@font-face{font-family:"Inter";src:url(/static/inter-regular.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Inter";src:url(/static/inter-medium.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Inter";src:url(/static/inter-semibold.woff2) format("woff2");font-weight:600;font-display:swap}
+:root{
+  --ground:#000;--surface:#111;--raised:#2a2a2a;--border:#1a1a1a;--rule:#161616;--control:#444;
+  --text:#fff;--muted:#b4b4b4;--faint:#949494;--nav:#bbb;
+  --accent:#c6f24e;--positive:#c6f24e;--negative:#e5484d;--warning:#e5a93b;
+  --pill-positive-bg:#222a10;--pill-positive-ink:#c6f24e;
+  --pill-negative-bg:#2c1a20;--pill-negative-ink:#e5566f;
+  --pill-warning-bg:#2b2414;--pill-warning-ink:#e5a93b;
+  --pill-neutral-bg:#222;--pill-neutral-ink:#fff;
+  --radius-card:20px;--radius-inner:12px;--gap:14px;--pad:22px;--ctl:36px;
+  --fs-title:20px;--fs-section:16px;--fs-kpi:24px;--fs-body:14px;--fs-small:12px;
+  --ease-out:cubic-bezier(.23,1,.32,1);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ground);color:var(--text);font:400 var(--fs-body)/1.5 "Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+::selection{background:var(--accent);color:#000}
+:focus-visible{outline:2px solid var(--text);outline-offset:2px;border-radius:6px}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#262626;border-radius:10px;border:2px solid #000}::-webkit-scrollbar-track{background:transparent}
+a{color:inherit;text-underline-offset:3px}
+button,input,select,textarea{font:inherit;color:inherit}
+.num,td.n,.kpi b{font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+
+/* shell: ruled T-frame */
+.shell{display:grid;grid-template-columns:220px 1fr;grid-template-rows:64px 1fr;min-height:100vh}
+.brand{grid-row:1;display:flex;align-items:center;gap:10px;padding:0 20px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.brand b{font-weight:600;font-size:15px;letter-spacing:-.01em}
+.top{display:flex;align-items:center;gap:10px;padding:0 29px;border-bottom:1px solid var(--border);min-width:0}
+.side{border-right:1px solid var(--border);padding:18px 12px;display:flex;flex-direction:column;gap:2px;position:sticky;top:0;align-self:start;height:calc(100vh - 64px)}
+.side h6{margin:18px 10px 6px;font:400 12px/1 "Inter";color:var(--faint)}
+.side a{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:8px;color:var(--nav);text-decoration:none;transition:color .15s ease}
+.side a svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.side a:hover{color:#e6e6e6}
+.side a[aria-current=page]{color:var(--text)}
+.side a .count{margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums;color:var(--text);background:var(--raised);border-radius:999px;padding:1px 8px}
+.side .foot{margin-top:auto;padding:10px;color:var(--faint);font-size:12px;line-height:1.7}
+.side .foot span{display:flex;justify-content:space-between}
+.side .foot i{font-style:normal;color:var(--muted)}
+.side .foot i.on{color:var(--positive)}
+main{padding:24px 29px 64px;min-width:0}
+
+/* top bar: the most frequent job, clip a video */
+.clipbar{flex:1;display:flex;gap:8px;max-width:760px}
+.clipbar input{flex:1;min-width:0;height:var(--ctl);background:var(--surface);border:1px solid #222;border-radius:999px;padding:0 16px;outline:none;transition:border-color .15s ease}
+.clipbar input::placeholder{color:var(--faint)}
+.clipbar input:focus{border-color:#555}
+.topright{margin-left:auto;display:flex;align-items:center;gap:14px;height:100%;padding-left:20px;border-left:1px solid var(--border);color:var(--muted);font-size:13px;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--faint);display:inline-block}
+.dot.live{background:var(--negative)}
+
+/* controls */
+.btn{height:var(--ctl);padding:0 16px;border-radius:999px;border:0;background:var(--raised);color:var(--text);font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:transform .16s var(--ease-out),background-color .15s ease;text-decoration:none}
+.btn:hover{background:#333}
+.btn:active{transform:scale(.97)}
+.btn.primary{background:var(--text);color:#000}
+.btn.primary:hover{background:#e6e6e6}
+.btn.ghost{background:transparent;border:1px solid var(--control)}
+.btn.ghost:hover{background:#151515}
+.btn.danger{background:var(--pill-negative-bg);color:var(--pill-negative-ink)}
+.btn.sm{height:30px;padding:0 12px;font-size:13px}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.btn .spin{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+label.f{display:block;font-size:13px;font-weight:500;margin:0 0 6px}
+.field{width:100%;height:40px;background:#0a0a0a;border:1px solid #2a2a2a;border-radius:10px;padding:0 12px;outline:none;transition:border-color .15s ease}
+textarea.field{height:auto;min-height:92px;padding:10px 12px;line-height:1.5;resize:vertical}
+.field:focus{border-color:#666}
+select.field{appearance:none;background-image:linear-gradient(45deg,transparent 50%,#999 50%),linear-gradient(135deg,#999 50%,transparent 50%);background-position:calc(100% - 17px) 18px,calc(100% - 12px) 18px;background-size:5px 5px;background-repeat:no-repeat;padding-right:30px}
+.hint{color:var(--faint);font-size:12px;margin-top:6px}
+.tog{position:relative;width:32px;height:18px;flex:none}
+.tog input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer}
+.tog span{position:absolute;inset:0;background:var(--control);border-radius:99px;transition:background-color .15s ease;pointer-events:none}
+.tog span::after{content:"";position:absolute;width:14px;height:14px;top:2px;left:2px;border-radius:50%;background:#fff;transition:transform .18s var(--ease-out)}
+.tog input:checked+span{background:var(--text)}
+.tog input:checked+span::after{transform:translateX(14px);background:#000}
+.tog input:focus-visible+span{outline:2px solid #fff;outline-offset:2px}
+
+/* type + layout */
+.titlerow{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px}
+h1{font-size:var(--fs-title);font-weight:600;margin:0;letter-spacing:-.01em}
+.sub{color:var(--muted);margin:4px 0 0}
+h2{font-size:var(--fs-section);font-weight:600;margin:0}
+.card{background:var(--surface);border-radius:var(--radius-card);padding:var(--pad)}
+.card>header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 384px;gap:var(--gap);align-items:start}
+.col{display:flex;flex-direction:column;gap:var(--gap);min-width:0}
+.railh{margin:0 0 8px;font-size:var(--fs-section);font-weight:600}
+.muted{color:var(--muted)}.faint{color:var(--faint)}
+
+/* KPIs: type, not tiles */
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);background:var(--surface);border-radius:var(--radius-card)}
+.kpi{padding:18px var(--pad);border-left:1px solid #1d1d1d}
+.kpi:first-child{border-left:0}
+.kpi span{display:block;color:var(--muted);font-size:13px}
+.kpi b{display:block;font-size:var(--fs-kpi);font-weight:500;margin:4px 0 2px;letter-spacing:-.01em}
+.kpi small{color:var(--faint);font-size:12px}
+.kpi b.warn{color:var(--warning)}.kpi b.bad{color:var(--negative)}
+
+/* pills */
+.pill{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;font-size:12px;font-weight:500;background:var(--pill-neutral-bg);color:var(--pill-neutral-ink);white-space:nowrap}
+.pill.pass,.pill.ok{background:var(--pill-positive-bg);color:var(--pill-positive-ink)}
+.pill.review{background:var(--pill-warning-bg);color:var(--pill-warning-ink)}
+.pill.block,.pill.failed{background:var(--pill-negative-bg);color:var(--pill-negative-ink)}
+.pill.live{background:var(--pill-negative-bg);color:#ff8a8f}
+
+/* live studio: signature element */
+.livecard{display:grid;grid-template-columns:1fr auto;gap:10px 20px;align-items:center;padding:18px 0;border-top:1px solid #1d1d1d}
+.livecard:first-of-type{border-top:0;padding-top:4px}
+.livecard h3{margin:0;font-size:15px;font-weight:600;display:flex;align-items:center;gap:10px}
+.livecard p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.heat{grid-column:1/-1;height:64px;display:block;width:100%}
+.liveacts{display:flex;gap:8px}
+
+/* clip shelf */
+.shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
+.tile{display:block;text-decoration:none;color:inherit;border-radius:var(--radius-inner);cursor:pointer}
+.tile .ph{aspect-ratio:9/16;border-radius:var(--radius-inner);background:#1b1b1b center/cover no-repeat;position:relative;overflow:hidden;transition:transform .2s var(--ease-out)}
+.tile:hover .ph{transform:scale(.985)}
+.tile .ph .pill{position:absolute;left:8px;top:8px}
+.tile .ph .len{position:absolute;right:8px;bottom:8px;font-size:12px;background:rgba(0,0,0,.72);border-radius:6px;padding:1px 6px;font-variant-numeric:tabular-nums}
+.tile b{display:block;font-weight:500;font-size:13px;margin-top:8px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tile small{color:var(--faint);font-size:12px}
+
+/* lists */
+.rows{list-style:none;margin:0;padding:0}
+.rows li{display:flex;gap:10px;align-items:center;min-height:45px;padding:8px 0;border-top:1px solid #1d1d1d}
+.rows li:first-child{border-top:0}
+.rows .grow{flex:1;min-width:0}
+.rows .t{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rows small{display:block;color:var(--faint);font-size:12px}
+.bar{height:4px;background:var(--raised);border-radius:4px;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--text);border-radius:4px;transition:transform .4s var(--ease-out);transform-origin:left}
+.ev{font-size:13px;line-height:1.45}
+.ev time{color:var(--faint);font-variant-numeric:tabular-nums;font-size:12px;flex:none;width:44px}
+.ev.error .grow{color:#ff9aa0}.ev.warn .grow{color:var(--warning)}
+
+/* tables */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-weight:400;color:var(--faint);font-size:12px;padding:0 12px 10px}
+td{padding:12px;border-top:1px solid #1d1d1d;vertical-align:middle}
+td.n,th.n{text-align:right}
+tr.click{cursor:pointer;transition:background-color .12s ease}
+tr.click:hover td{background:#151515}
+
+/* inbox */
+.inbox{display:grid;grid-template-columns:320px minmax(0,1fr);gap:var(--gap);align-items:start}
+.qlist{background:var(--surface);border-radius:var(--radius-card);padding:8px;max-height:calc(100vh - 170px);overflow:auto;position:sticky;top:16px}
+.qitem{display:flex;gap:12px;padding:8px;border-radius:12px;cursor:pointer;align-items:center;transition:background-color .12s ease;width:100%;background:none;border:0;text-align:left}
+.qitem:hover{background:#181818}
+.qitem[aria-selected=true]{background:var(--raised)}
+.qitem img,.qitem .noimg{width:44px;height:78px;object-fit:cover;border-radius:8px;background:#1b1b1b;flex:none}
+.qitem b{font-weight:500;font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.qitem small{display:block;color:var(--faint);font-size:12px;margin:3px 0 5px}
+.filters{display:flex;gap:6px;padding:4px 4px 10px;flex-wrap:wrap}
+.chip{height:28px;padding:0 12px;border-radius:999px;background:transparent;border:1px solid #2c2c2c;color:var(--muted);cursor:pointer;font-size:13px;transition:color .12s ease,border-color .12s ease}
+.chip[aria-pressed=true]{color:var(--text);border-color:#777}
+.detail{display:grid;grid-template-columns:300px minmax(0,1fr);gap:var(--gap);align-items:start}
+.player{background:var(--surface);border-radius:var(--radius-card);padding:12px}
+.player video{width:100%;aspect-ratio:9/16;border-radius:12px;background:#000;display:block}
+.player dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:12px 6px 4px;font-size:13px}
+.player dt{color:var(--faint)}.player dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.checks{list-style:none;margin:0;padding:0}
+.checks li{display:grid;grid-template-columns:18px 160px 1fr;gap:12px;padding:12px 0;border-top:1px solid #1d1d1d;align-items:start}
+.checks li:first-child{border-top:0;padding-top:2px}
+.checks .mk{width:10px;height:10px;border-radius:50%;margin-top:5px;background:var(--faint)}
+.checks .ok .mk{background:var(--positive)}
+.checks .review .mk{background:var(--warning)}
+.checks .block .mk{background:var(--negative)}
+.checks .warn .mk{background:transparent;border:1.5px solid var(--faint)}
+.checks b{font-weight:500}
+.checks p{margin:0;color:var(--muted)}
+.checks em{display:block;font-style:normal;color:var(--faint);font-size:13px;margin-top:2px}
+.verdict{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+.verdict strong{font-size:var(--fs-kpi);font-weight:500;letter-spacing:-.01em}
+.verdict.pass strong{color:var(--positive)}.verdict.review strong{color:var(--warning)}.verdict.block strong{color:var(--negative)}
+.tabs{display:flex;gap:4px;margin-bottom:10px}
+.tabs button{height:30px;padding:0 12px;border-radius:999px;border:0;background:none;color:var(--nav);cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--raised);color:var(--text)}
+.acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.targets{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.targets label{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px 0 10px;border-radius:999px;background:#0a0a0a;border:1px solid #2a2a2a;cursor:pointer;font-size:13px}
+.targets input{accent-color:#fff}
+.musicstrip{height:28px;width:100%;display:block;margin-top:8px}
+
+/* forms in two columns (settings, accounts, streamer editor) */
+.sect{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;padding:28px 0;border-top:1px solid var(--border)}
+.sect:first-of-type{border-top:0;padding-top:4px}
+.sect>div:first-child h2{margin-bottom:6px}
+.sect>div:first-child p{color:var(--muted);margin:0}
+.panel{background:var(--surface);border-radius:16px;padding:18px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.fgrid .wide{grid-column:1/-1}
+.swrow{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid #1d1d1d}
+.swrow:first-child{border-top:0;padding-top:0}
+.swrow b{font-weight:500}.swrow p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.risk{display:grid;grid-template-columns:1fr 150px;gap:12px;align-items:center;padding:8px 0;border-top:1px solid #1d1d1d}
+.risk:first-child{border-top:0}
+.empty{padding:8px 0 4px;color:var(--muted)}
+.empty b{display:block;color:var(--text);font-weight:500;margin-bottom:4px}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;background:#0a0a0a;border-radius:8px;padding:2px 6px}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,0);background:var(--text);color:#000;padding:10px 16px;border-radius:999px;font-weight:500;box-shadow:0 8px 30px rgba(0,0,0,.5);transition:opacity .2s ease,transform .25s var(--ease-out);z-index:20;max-width:min(560px,90vw)}
+.toast.err{background:#2c1a20;color:#ffb3b7}
+.toast[data-hide]{opacity:0;transform:translate(-50%,8px);pointer-events:none}
+
+.menu{display:none}
+@media (max-width:1180px){.grid{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(3,1fr)}.kpi:nth-child(4){border-left:0}.detail{grid-template-columns:1fr}.player{max-width:340px}}
+@media (max-width:860px){
+  .shell{grid-template-columns:1fr;grid-template-rows:56px auto 1fr}
+  .brand{border-right:0}
+  .top{grid-row:3;grid-column:1;display:none}
+  .side{position:static;height:auto;flex-direction:row;overflow-x:auto;padding:6px 10px;border-right:0;border-bottom:1px solid var(--border)}
+  .side h6,.side .foot{display:none}
+  .side a{flex:none}
+  main{padding:18px 16px 64px}
+  .mclip{display:flex!important}
+  .kpis{grid-template-columns:1fr 1fr}.kpi{border-left:0;border-top:1px solid #1d1d1d}.kpi:nth-child(-n+2){border-top:0}
+  .inbox,.sect{grid-template-columns:1fr}
+  .qlist{position:static;max-height:none}
+  .fgrid{grid-template-columns:1fr}
+  .checks li{grid-template-columns:18px 1fr}.checks li p{grid-column:2}
+  .titlerow{flex-direction:column;align-items:flex-start}
+  .hide-m{display:none}
+}
+.mclip{display:none;gap:8px;margin-bottom:18px}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important;animation-duration:.6s!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#161616"/><path d="M9 7h8.5a5 5 0 0 1 2.6 9.3A5.2 5.2 0 0 1 17.8 26H9z" fill="#fff"/><path d="M6 23 26 9" stroke="#c6f24e" stroke-width="3"/></svg>
+    <b>Byditors Cut</b>
+  </div>
+  <div class="top">
+    <form class="clipbar" id="clipform">
+      <input id="clipurl" type="url" aria-label="Video or stream link to clip" placeholder="Paste a YouTube, Kick, Twitch or TikTok link to clip" required>
+      <button class="btn primary" type="submit">Make clips</button>
+      <label class="btn ghost" for="upfile" tabindex="0">Upload</label>
+      <input id="upfile" type="file" accept="video/*" hidden>
+    </form>
+    <div class="topright"><span class="dot" id="livedot"></span><span id="livetxt">Nobody live</span><span class="faint">This PC</span></div>
+  </div>
+  <nav class="side" aria-label="Main">
+    <a href="#today" data-v="today"><svg viewBox="0 0 24 24"><path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>Today</a>
+    <a href="#inbox" data-v="inbox"><svg viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13L20 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6z"/></svg>Clip inbox<span class="count" id="c-inbox" hidden></span></a>
+    <a href="#streamers" data-v="streamers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="11" r="2.5"/></svg>Streamers</a>
+    <h6>Publishing</h6>
+    <a href="#queue" data-v="queue"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9h16M9 3v4M15 3v4"/></svg>Post queue<span class="count" id="c-failed" hidden></span></a>
+    <a href="#accounts" data-v="accounts"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 1 0-5.7l2.3-2.3a4 4 0 0 1 5.7 5.7l-1.2 1.1"/><path d="M14 10a4 4 0 0 1 0 5.7l-2.3 2.3a4 4 0 0 1-5.7-5.7l1.2-1.1"/></svg>Accounts</a>
+    <a href="#settings" data-v="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Guard &amp; settings</a>
+    <div class="foot" id="tools"></div>
+  </nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" data-hide></div>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const main = $("#main");
+let S = {state: null, view: "today", sel: null, filter: "todo", timer: null};
+
+async function api(path, opts = {}) {
+  const o = {headers: {}, ...opts};
+  if (o.body && !(o.body instanceof FormData)) { o.headers["content-type"] = "application/json"; o.body = JSON.stringify(o.body); }
+  const r = await fetch(path, o);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || j.error || `Request failed (${r.status})`);
+  return j;
+}
+let toastT;
+function toast(msg, err = false) {
+  const t = $("#toast"); t.textContent = msg; t.className = "toast" + (err ? " err" : ""); t.removeAttribute("data-hide");
+  clearTimeout(toastT); toastT = setTimeout(() => t.setAttribute("data-hide", ""), err ? 6000 : 3200);
+}
+async function act(btn, fn, ok) {
+  const label = btn.innerHTML; btn.disabled = true; btn.innerHTML = `<span class="spin"></span>${label}`;
+  try { const r = await fn(); if (ok) toast(ok); return r; } catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; btn.innerHTML = label; }
+}
+const ago = t => { const s = Date.now() / 1000 - t; if (s < 60) return "now"; if (s < 3600) return `${Math.floor(s/60)}m`; if (s < 86400) return `${Math.floor(s/3600)}h`; return `${Math.floor(s/86400)}d`; };
+const clock = t => new Date(t * 1000).toLocaleString([], {weekday: "short", hour: "2-digit", minute: "2-digit"});
+const dur = s => { s = Math.round(s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return h ? `${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}` : `${m}:${String(x).padStart(2,"0")}`; };
+const VERDICT = {pass: "Ready to post", review: "Needs a look", block: "Blocked", pending: "Checking"};
+const vpill = v => `<span class="pill ${v}">${VERDICT[v] || v}</span>`;
+const RIGHTS = {own: "Your content", permission: "Permission", clip_program: "Clip program", unknown: "No permission"};
+const PLAT = {instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", facebook: "Facebook", kick: "Kick", twitch: "Twitch"};
+
+/* ---------------- routing ---------------- */
+function route() {
+  const v = (location.hash.slice(1).split("/")[0]) || "today";
+  S.view = ["today","inbox","streamers","queue","accounts","settings"].includes(v) ? v : "today";
+  S.sel = location.hash.split("/")[1] || null;
+  document.querySelectorAll(".side a[data-v]").forEach(a => a.dataset.v === S.view ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
+  render();
+}
+window.addEventListener("hashchange", route);
+async function render() {
+  clearInterval(S.timer);
+  try { await VIEWS[S.view](); } catch (e) { main.innerHTML = `<div class="empty"><b>Couldn't load this screen</b>${esc(e.message)}</div>`; }
+  if (S.view === "today") S.timer = setInterval(() => VIEWS.today(true), 3000);
+}
+
+/* ---------------- shared state ---------------- */
+async function loadState() {
+  S.state = await api("/api/state");
+  const c = S.state.counts, live = S.state.live;
+  const ci = $("#c-inbox"); ci.hidden = !c.to_review; ci.textContent = c.to_review;
+  const cf = $("#c-failed"); cf.hidden = !c.failed; cf.textContent = c.failed;
+  $("#livedot").className = "dot" + (live.length ? " live" : "");
+  $("#livetxt").textContent = live.length ? `${live.length} recording live` : "Nobody live";
+  const t = S.state.tools;
+  const row = (k, on, txt) => `<span>${k}<i class="${on ? "on" : ""}">${txt}</i></span>`;
+  $("#tools").innerHTML = row("Speech to text", t.whisper, t.whisper ? "On" : "Off") +
+    row("AI picks", t.ai, t.ai ? esc(t.ai_provider) : "Off") + row("Song ID", t.audd, t.audd ? "On" : "Off") +
+    row("Music removal", t.demucs, t.demucs ? "On" : "Off");
+  return S.state;
+}
+
+/* ---------------- Today ---------------- */
+function heatSVG(vals, clips = []) {
+  if (!vals || vals.length < 2) return `<svg class="heat" viewBox="0 0 960 64" preserveAspectRatio="none" aria-hidden="true"><rect y="31" width="960" height="1" fill="#2a2a2a"/></svg>`;
+  const w = 960 / vals.length;
+  const bars = vals.map((v, i) => { const h = Math.max(2, v * 60); const hot = v > .82; return `<rect x="${(i*w).toFixed(1)}" y="${(64-h).toFixed(1)}" width="${Math.max(1,w-2).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${hot ? "#c6f24e" : "#3a3a3a"}"/>`; }).join("");
+  return `<svg class="heat" viewBox="0 0 960 64" preserveAspectRatio="none" role="img" aria-label="Loudness over the last few minutes; bright bars are the spikes that trigger clips">${bars}</svg>`;
+}
+function liveBlock(st) {
+  if (!st.live.length) return `<div class="empty"><b>Nobody you follow is live right now</b>The radar checks your ${st.streamers || "0"} streamer${st.streamers === 1 ? "" : "s"} every 2 minutes and starts recording on its own. ${st.streamers ? "" : `<a href="#streamers">Add a streamer</a> to start.`}</div>`;
+  return st.live.map(l => `<div class="livecard">
+    <div><h3><span class="pill live">Live</span>${esc(l.streamer)}</h3><p>${esc(l.title || l.url)} · <span class="num">${dur(l.recorded)}</span> recorded · ${l.clips} clip${l.clips === 1 ? "" : "s"} · ${l.chat ? `${l.chat.toLocaleString()} chat messages` : "chat not connected"}</p></div>
+    <div class="liveacts"><button class="btn primary sm" data-clip="${l.job_id}">Clip last 45 s</button><button class="btn ghost sm" data-stop="${l.job_id}">Stop</button></div>
+    ${heatSVG(l.heat)}</div>`).join("");
+}
+const tile = c => `<a class="tile" href="#inbox/${c.id}"><div class="ph" style="background-image:url(/media/thumb/${c.id}.jpg)">${vpill(c.verdict)}<span class="len">${dur(c.duration)}</span></div><b>${esc(c.title || "Untitled clip")}</b><small>${esc(c.streamer || "Your upload")} · ${ago(c.created)}</small></a>`;
+async function viewToday(poll = false) {
+  const [st, clips] = await Promise.all([loadState(), api("/api/clips?limit=12")]);
+  if (poll && S.view !== "today") return;
+  const c = st.counts;
+  const finding = c.to_review ? `${c.to_review} clip${c.to_review === 1 ? " is" : "s are"} waiting for you` + (c.blocked_today ? ` · the Guard blocked ${c.blocked_today} today` : "")
+    : c.scheduled ? `Nothing to review · ${c.scheduled} post${c.scheduled === 1 ? "" : "s"} scheduled` : "Nothing waiting. Paste a link above or add a streamer.";
+  const jobs = st.jobs.length ? `<ul class="rows">${st.jobs.map(j => `<li><div class="grow"><span class="t">${esc(j.title || j.url)}</span>
+      <small>${j.status === "failed" ? `<span style="color:#ff9aa0">${esc(j.error.slice(0,120))}</span>` : esc(j.step)}</small>
+      ${j.status === "working" || j.status === "queued" ? `<div class="bar"><i style="transform:scaleX(${j.progress || 0.02})"></i></div>` : ""}</div>
+      <span class="pill ${j.status === "done" ? "ok" : j.status === "failed" ? "failed" : ""}">${{done: "Done", failed: "Failed", working: "Working", queued: "Waiting"}[j.status] || j.status}</span></li>`).join("")}</ul>`
+    : `<div class="empty"><b>No videos yet</b>Paste a link in the bar at the top.</div>`;
+  const evs = st.events.length ? `<ul class="rows">${st.events.map(e => `<li class="ev ${e.level}"><time>${ago(e.at)}</time><span class="grow">${esc(e.text)}</span></li>`).join("")}</ul>` : `<div class="empty">Nothing has happened yet.</div>`;
+  const html = `
+  <form class="mclip" id="mclip"><input class="field" type="url" placeholder="Paste a link to clip" aria-label="Link to clip" required><button class="btn primary">Clip</button></form>
+  <div class="titlerow"><div><h1>Today</h1><p class="sub">${esc(finding)}</p></div>
+    ${c.to_review ? `<a class="btn primary" href="#inbox">Review ${c.to_review} clip${c.to_review === 1 ? "" : "s"}</a>` : ""}</div>
+  <div class="grid"><div class="col">
+    <div class="kpis">
+      <div class="kpi"><span>Clips made</span><b>${c.clips_today}</b><small>last 24 hours</small></div>
+      <div class="kpi"><span>Waiting for you</span><b class="${c.to_review ? "warn" : ""}">${c.to_review}</b><small>in the clip inbox</small></div>
+      <div class="kpi"><span>Blocked</span><b class="${c.blocked_today ? "bad" : ""}">${c.blocked_today}</b><small>last 24 hours</small></div>
+      <div class="kpi"><span>Posted</span><b>${c.posted_today}</b><small>last 24 hours</small></div>
+      <div class="kpi"><span>Scheduled</span><b>${c.scheduled}</b><small>${c.failed ? `<span style="color:#ff9aa0">${c.failed} failed</span>` : "in the post queue"}</small></div>
+    </div>
+    <section class="card" aria-labelledby="h-live"><header><h2 id="h-live">Live studio</h2><span class="faint hide-m">Lime bars are the spikes that cut a clip</span></header>${liveBlock(st)}</section>
+    <section class="card" aria-labelledby="h-clips"><header><h2 id="h-clips">Latest clips</h2><a class="btn ghost sm" href="#inbox">Open inbox</a></header>
+      ${clips.length ? `<div class="shelf">${clips.map(tile).join("")}</div>` : `<div class="empty"><b>No clips yet</b>They appear here as soon as a video or stream has been cut and checked.</div>`}</section>
+  </div>
+  <aside class="col"><div><h2 class="railh">Working on</h2><div class="card" style="padding:8px var(--pad)">${jobs}</div></div>
+    <div><h2 class="railh">Activity</h2><div class="card" style="padding:8px var(--pad)">${evs}</div></div></aside></div>`;
+  if (poll && document.activeElement && main.contains(document.activeElement)) return; // don't yank focus mid-typing
+  main.innerHTML = html;
+  main.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => act(b, () => api(`/api/live/${b.dataset.clip}/clip`, {method: "POST", body: {seconds: 45}}), "Cutting the last 45 seconds…"));
+  main.querySelectorAll("[data-stop]").forEach(b => b.onclick = () => act(b, () => api(`/api/live/${b.dataset.stop}/stop`, {method: "POST"}), "Recording stopped"));
+  const m = $("#mclip"); if (m) m.onsubmit = e => { e.preventDefault(); submitLink(m.querySelector("input").value); };
+}
+
+/* ---------------- Inbox ---------------- */
+async function viewInbox() {
+  const map = {todo: "state=new", approved: "state=approved", queued: "state=queued", posted: "state=posted", blocked: "verdict=block", rejected: "state=rejected"};
+  const [list] = await Promise.all([api(`/api/clips?${map[S.filter]}&limit=120`), loadState()]);
+  if (!S.sel && list.length) S.sel = list[0].id;
+  const filters = [["todo","To review"],["blocked","Blocked"],["queued","Scheduled"],["posted","Posted"],["rejected","Rejected"]];
+  main.innerHTML = `<div class="titlerow"><div><h1>Clip inbox</h1><p class="sub">Every clip after the Guard's check. Nothing from creators without permission is posted until you approve it.</p></div></div>
+  <div class="inbox"><div class="qlist" role="listbox" aria-label="Clips">
+    <div class="filters">${filters.map(([k,l]) => `<button class="chip" data-f="${k}" aria-pressed="${S.filter === k}">${l}</button>`).join("")}</div>
+    ${list.length ? list.map(c => `<button class="qitem" role="option" data-id="${c.id}" aria-selected="${c.id === S.sel}"><img src="/media/thumb/${c.id}.jpg" alt="" loading="lazy" onerror="this.className='noimg'"><div><b>${esc(c.title || "Untitled clip")}</b><small>${esc(c.streamer || "Your upload")} · <span class="num">${dur(c.duration)}</span></small>${vpill(c.verdict)}</div></button>`).join("")
+      : `<div class="empty"><b>Nothing here</b>${S.filter === "todo" ? "New clips land here after they're cut and checked." : "No clips in this list."}</div>`}
+  </div><div id="detail"></div></div>`;
+  main.querySelectorAll("[data-f]").forEach(b => b.onclick = () => { S.filter = b.dataset.f; S.sel = null; history.replaceState(null, "", "#inbox"); viewInbox(); });
+  main.querySelectorAll(".qitem").forEach(b => b.onclick = () => { S.sel = b.dataset.id; history.replaceState(null, "", `#inbox/${S.sel}`); main.querySelectorAll(".qitem").forEach(x => x.setAttribute("aria-selected", x === b)); showClip(S.sel); });
+  if (S.sel) showClip(S.sel); else $("#detail").innerHTML = "";
+}
+function musicSVG(curve) {
+  if (!curve || !curve.length || Math.max(...curve) < 0.2) return "";
+  const w = 600 / curve.length;
+  return `<svg class="musicstrip" viewBox="0 0 600 28" preserveAspectRatio="none" role="img" aria-label="Where music was heard in the clip">${curve.map((v,i) => `<rect x="${(i*w).toFixed(1)}" y="${(28 - Math.max(1.5, v*26)).toFixed(1)}" width="${Math.max(1, w-1.5).toFixed(1)}" height="${Math.max(1.5, v*26).toFixed(1)}" rx="1" fill="${v > .55 ? "#e5a93b" : "#3a3a3a"}"/>`).join("")}</svg>`;
+}
+async function showClip(id) {
+  const box = $("#detail"); if (!box) return;
+  const [c, accs] = await Promise.all([api(`/api/clips/${id}`), api("/api/accounts")]);
+  const g = c.guard || {}, checks = g.checks || [];
+  const status = {ok: "Passed", warn: "Note", review: "Look at this", block: "Blocked"};
+  const caps = c.captions || {};
+  const plats = ["instagram","youtube","tiktok","facebook"].filter(p => caps[p] !== undefined);
+  const hasMusic = checks.some(k => k.id === "music" && k.status !== "ok");
+  const done = c.state === "posted" || c.state === "queued";
+  box.innerHTML = `<div class="detail">
+    <div class="player"><video src="/media/clip/${c.id}.mp4" controls playsinline preload="metadata" poster="/media/thumb/${c.id}.jpg"></video>
+      <dl><dt>Length</dt><dd>${dur(c.duration)}</dd><dt>From</dt><dd>${dur(c.start)}–${dur(c.end)}</dd><dt>Layout</dt><dd>${esc(g.layout || "–")}</dd><dt>Score</dt><dd>${Math.round(c.score)}</dd></dl>
+      <div class="acts" style="margin:12px 4px 4px"><a class="btn ghost sm" href="/media/clip/${c.id}.mp4" download>Download</a></div></div>
+    <div class="col">
+      <section class="card" aria-labelledby="h-guard"><div class="verdict ${c.verdict}"><strong id="h-guard">${VERDICT[c.verdict] || c.verdict}</strong><span class="muted">${esc(c.title)}</span></div>
+        <p class="muted" style="margin:0 0 14px">${c.verdict === "pass" ? "Every check passed." : c.verdict === "review" ? "The Guard isn't sure about something below. Watch it, then approve or reject." : "Something here would get the post taken down or the account struck."}${c.why ? " Picked because: " + esc(c.why) : ""}</p>
+        <ul class="checks">${checks.map(k => `<li class="${k.status}"><span class="mk" aria-hidden="true"></span><b>${esc(k.label)}<span class="sr" style="position:absolute;left:-9999px">: ${status[k.status]}</span></b><p>${esc(k.detail)}${k.fix ? `<em>${esc(k.fix)}</em>` : ""}${k.id === "music" ? musicSVG(g.music_curve) : ""}</p></li>`).join("")}</ul>
+      </section>
+      <section class="card" aria-labelledby="h-cap"><header><h2 id="h-cap">Title and captions</h2></header>
+        <label class="f" for="ctitle">Title</label><input class="field" id="ctitle" value="${esc(c.title)}" style="margin-bottom:14px">
+        <div class="tabs" role="tablist">${plats.map((p,i) => `<button role="tab" data-p="${p}" aria-selected="${i===0}">${PLAT[p]}</button>`).join("")}</div>
+        ${plats.map((p,i) => { const v = caps[p]; const text = typeof v === "object" ? `${v.title}\n\n${v.description}` : v; return `<textarea class="field" data-cap="${p}" aria-label="${PLAT[p]} caption" ${i ? "hidden" : ""} rows="6">${esc(text)}</textarea>`; }).join("")}
+        <div class="acts" style="margin-top:12px"><button class="btn sm" id="savecap">Save text</button></div>
+      </section>
+      <section class="card" aria-labelledby="h-post"><header><h2 id="h-post">Post it</h2>${c.posts.length ? `<span class="faint">${c.posts.map(p => `${esc(p.status)} ${p.remote_url ? `<a href="${esc(p.remote_url)}" target="_blank" rel="noopener">open</a>` : ""}`).join(" · ")}</span>` : ""}</header>
+        ${accs.accounts.length ? `<div class="targets">${accs.accounts.map(a => `<label><input type="checkbox" value="${a.id}" checked> ${PLAT[a.platform]} · ${esc(a.name)}</label>`).join("")}</div>`
+          : `<p class="muted" style="margin:0 0 14px">No accounts connected yet. <a href="#accounts">Connect Instagram, YouTube or TikTok</a>.</p>`}
+        ${c.verdict === "block" ? `<label class="f" for="override">Why is this allowed anyway?</label><textarea class="field" id="override" rows="2" placeholder="For example: it's my own song and I own the rights"></textarea><p class="hint">Blocked clips only go out with a written reason. It's kept in the activity log.</p>` : ""}
+        <div class="acts" style="margin-top:12px">
+          <button class="btn primary" id="approve" ${done || !accs.accounts.length ? "disabled" : ""}>${c.verdict === "block" ? "Override and schedule" : "Approve and schedule"}</button>
+          <button class="btn" id="postnow" ${done || !accs.accounts.length ? "disabled" : ""}>Post now</button>
+          ${hasMusic ? `<button class="btn" id="strip">${g.can_strip_music ? "Remove music, keep voice" : "Mute the music parts"}</button>` : ""}
+          <button class="btn ghost" id="recheck">Check again</button>
+          <button class="btn danger" id="reject" ${c.state === "rejected" ? "disabled" : ""}>Reject</button>
+        </div></section>
+    </div></div>`;
+  box.querySelectorAll("[role=tab]").forEach(t => t.onclick = () => { box.querySelectorAll("[role=tab]").forEach(x => x.setAttribute("aria-selected", x === t)); box.querySelectorAll("[data-cap]").forEach(a => a.hidden = a.dataset.cap !== t.dataset.p); });
+  $("#savecap").onclick = e => act(e.currentTarget, () => {
+    const caps2 = {...caps}; box.querySelectorAll("[data-cap]").forEach(a => { const p = a.dataset.cap; if (typeof caps[p] === "object") { const [t, ...rest] = a.value.split("\n\n"); caps2[p] = {...caps[p], title: t.trim(), description: rest.join("\n\n").trim()}; } else caps2[p] = a.value; });
+    return api(`/api/clips/${id}`, {method: "PATCH", body: {title: $("#ctitle").value, captions: caps2}});
+  }, "Saved");
+  const send = now => e => act(e.currentTarget, async () => {
+    const accounts = [...box.querySelectorAll(".targets input:checked")].map(i => i.value);
+    if (!accounts.length) throw new Error("Pick at least one account");
+    await api(`/api/clips/${id}/approve`, {method: "POST", body: {accounts, now, override_reason: $("#override")?.value || ""}});
+    viewInbox();
+  }, now ? "Posting in a few seconds" : "Scheduled in the post queue");
+  $("#approve").onclick = send(false); $("#postnow").onclick = send(true);
+  if ($("#strip")) $("#strip").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/strip-music`, {method: "POST"}); showClip(id); }, "Music handled and checked again");
+  $("#recheck").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/recheck`, {method: "POST"}); showClip(id); }, "Checked again");
+  $("#reject").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/reject`, {method: "POST"}); viewInbox(); }, "Rejected");
+}
+
+/* ---------------- Streamers ---------------- */
+function streamerForm(s = {}, accs = []) {
+  const ch = s.channels || {};
+  const post = s.post_to || [];
+  return `<form class="panel" id="sform"><div class="fgrid">
+    <div><label class="f" for="s-name">Name</label><input class="field" id="s-name" name="name" value="${esc(s.name)}" required placeholder="How you call them"></div>
+    <div><label class="f" for="s-credit">Credit line</label><input class="field" id="s-credit" name="credit" value="${esc(s.credit)}" placeholder="@name on Kick"><p class="hint">Shown on every clip and in every caption.</p></div>
+    <div class="wide"><label class="f" for="s-ch">Channels</label><textarea class="field" id="s-ch" name="channels" rows="3" placeholder="kick.com/name&#10;twitch.tv/name&#10;youtube.com/@name">${esc(Object.values(ch).join("\n"))}</textarea><p class="hint">Kick, Twitch, YouTube and TikTok links. One per line.</p></div>
+    <div><label class="f" for="s-rights">Rights</label><select class="field" id="s-rights" name="rights">${Object.entries(RIGHTS).map(([k,l]) => `<option value="${k}" ${(s.rights || "unknown") === k ? "selected" : ""}>${l}</option>`).join("")}</select><p class="hint">Without permission, clips are made but never posted automatically.</p></div>
+    <div><label class="f" for="s-note">Proof of permission</label><input class="field" id="s-note" name="rights_note" value="${esc(s.rights_note)}" placeholder="Link to their clip-program rules or your email thread"></div>
+    <div><label class="f" for="s-layout">Vertical layout</label><select class="field" id="s-layout" name="layout">${[["auto","Decide per clip"],["split","Facecam on top, gameplay below"],["face","Follow the face"],["blur","Whole frame on blurred fill"],["center","Centre crop"]].map(([k,l]) => `<option value="${k}" ${(s.layout||"auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div><label class="f" for="s-lang">Language</label><select class="field" id="s-lang" name="language">${[["","Detect"],["hi","Hindi / Hinglish"],["en","English"],["ur","Urdu"],["ta","Tamil"],["te","Telugu"],["bn","Bengali"],["mr","Marathi"],["es","Spanish"]].map(([k,l]) => `<option value="${k}" ${(s.language||"") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div class="wide">
+      <div class="swrow"><div><b>Clip their lives</b><p>Record as soon as they go live and cut the spikes while they stream.</p></div><span class="tog"><input type="checkbox" name="auto_live" aria-label="Clip their lives" ${s.auto_live !== 0 ? "checked" : ""}><span></span></span></div>
+      <div class="swrow"><div><b>Clip new uploads</b><p>New videos and VODs are downloaded and clipped. Their back catalogue is skipped.</p></div><span class="tog"><input type="checkbox" name="auto_uploads" aria-label="Clip new uploads" ${s.auto_uploads !== 0 ? "checked" : ""}><span></span></span></div>
+      <div class="swrow"><div><b>Auto-post clips that pass the Guard</b><p>Only with permission on record. Anything the Guard flags still waits for you.</p></div><span class="tog"><input type="checkbox" name="auto_post" aria-label="Auto-post clips that pass" ${s.auto_post ? "checked" : ""}><span></span></span></div>
+    </div>
+    ${accs.length ? `<div class="wide"><label class="f">Post to</label><div class="targets">${accs.map(a => `<label><input type="checkbox" name="post_to" value="${a.id}" ${post.includes(a.id) ? "checked" : ""}> ${PLAT[a.platform]} · ${esc(a.name)}</label>`).join("")}</div></div>` : ""}
+  </div><div class="acts" style="margin-top:6px"><button class="btn primary">${s.id ? "Save changes" : "Add streamer"}</button>${s.id ? `<button type="button" class="btn ghost" id="s-cancel">Close</button><button type="button" class="btn danger" id="s-del" style="margin-left:auto">Remove ${esc(s.name)}</button>` : ""}</div></form>`;
+}
+async function viewStreamers() {
+  const [list, accs] = await Promise.all([api("/api/streamers"), api("/api/accounts"), loadState()]);
+  const edit = S.sel && list.find(s => s.id === S.sel);
+  const rows = list.map(s => {
+    const st = s.status || {};
+    const live = s.live_job ? `<span class="pill live">Live</span>` : `<span class="faint">${st.last_check ? "checked " + ago(st.last_check) + " ago" : "not checked yet"}</span>`;
+    const r = s.rights;
+    return `<tr class="click" data-id="${s.id}" tabindex="0"><td><b style="font-weight:500">${esc(s.name)}</b><br><small class="faint">${Object.keys(s.channels || {}).map(p => PLAT[p] || p).join(" · ")}</small></td>
+      <td><span class="pill ${r === "unknown" ? "review" : "ok"}">${RIGHTS[r]}</span></td>
+      <td class="hide-m">${[s.auto_live && "Lives", s.auto_uploads && "Uploads"].filter(Boolean).join(" + ") || "<span class='faint'>Off</span>"}</td>
+      <td class="hide-m">${s.auto_post ? "Auto-post" : "<span class='faint'>You approve</span>"}</td>
+      <td class="n num">${s.clips}</td><td>${live}</td>
+      <td class="n"><button class="btn ghost sm" data-check="${s.id}">Check now</button> ${s.live_job ? "" : `<button class="btn sm" data-rec="${s.id}">Record</button>`}</td></tr>`;
+  }).join("");
+  main.innerHTML = `<div class="titlerow"><div><h1>Streamers</h1><p class="sub">${list.length ? `${list.length} watched · ${list.filter(s => s.live_job).length} live now · ${list.filter(s => s.rights === "unknown").length} without permission on record` : "Add the creators you clip. The radar watches their lives and uploads."}</p></div>
+    ${edit ? "" : `<button class="btn primary" id="addbtn">Add streamer</button>`}</div>
+  <div id="formslot">${edit ? `<h2 class="railh">Edit ${esc(edit.name)}</h2>${streamerForm(edit, accs.accounts)}` : ""}</div>
+  <section class="card" aria-labelledby="h-st" style="margin-top:var(--gap)"><header><h2 id="h-st">Watching</h2></header>
+    ${list.length ? `<table><thead><tr><th>Streamer</th><th>Rights</th><th class="hide-m">Clips from</th><th class="hide-m">Posting</th><th class="n">Clips</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty"><b>No streamers yet</b>Add one with their Kick, Twitch or YouTube link. Ask them first: lots of streamers run clipping programs and will say yes.</div>`}</section>`;
+  const bindForm = () => {
+    const f = $("#sform"); if (!f) return;
+    f.onsubmit = e => { e.preventDefault(); const fd = new FormData(f);
+      const body = {name: fd.get("name"), credit: fd.get("credit"), channels: fd.get("channels"), rights: fd.get("rights"), rights_note: fd.get("rights_note"), layout: fd.get("layout"), language: fd.get("language"),
+        auto_live: !!fd.get("auto_live"), auto_uploads: !!fd.get("auto_uploads"), auto_post: !!fd.get("auto_post"), post_to: fd.getAll("post_to")};
+      act(f.querySelector(".btn.primary"), async () => { await api(edit ? `/api/streamers/${edit.id}` : "/api/streamers", {method: edit ? "PATCH" : "POST", body}); location.hash = "#streamers"; viewStreamers(); }, edit ? "Saved" : "Added — checking their channels now"); };
+    if ($("#s-cancel")) $("#s-cancel").onclick = () => location.hash = "#streamers";
+    if ($("#s-del")) $("#s-del").onclick = e => act(e.currentTarget, async () => { await api(`/api/streamers/${edit.id}`, {method: "DELETE"}); location.hash = "#streamers"; }, "Removed");
+  };
+  bindForm();
+  if ($("#addbtn")) $("#addbtn").onclick = () => { $("#formslot").innerHTML = `<h2 class="railh">New streamer</h2>${streamerForm({}, accs.accounts)}`; $("#addbtn").hidden = true; bindForm(); $("#s-name").focus(); };
+  main.querySelectorAll("tr.click").forEach(tr => { const go = () => { location.hash = `#streamers/${tr.dataset.id}`; }; tr.onclick = e => { if (!e.target.closest("button")) go(); }; tr.onkeydown = e => { if (e.key === "Enter") go(); }; });
+  main.querySelectorAll("[data-check]").forEach(b => b.onclick = () => act(b, () => api(`/api/streamers/${b.dataset.check}/check`, {method: "POST"}), "Checking their channels"));
+  main.querySelectorAll("[data-rec]").forEach(b => b.onclick = () => act(b, async () => { await api(`/api/streamers/${b.dataset.rec}/record`, {method: "POST", body: {}}); viewStreamers(); }, "Recording started"));
+}
+
+/* ---------------- Queue ---------------- */
+async function viewQueue() {
+  const [posts] = await Promise.all([api("/api/posts"), loadState()]);
+  const lbl = {scheduled: "Scheduled", posting: "Posting", posted: "Posted", failed: "Failed", cancelled: "Cancelled"};
+  main.innerHTML = `<div class="titlerow"><div><h1>Post queue</h1><p class="sub">Posts are spaced out and capped per account, and skip quiet hours. Each clip is checked once more right before it goes out.</p></div></div>
+  <section class="card" aria-labelledby="h-q"><header><h2 id="h-q">${posts.length} post${posts.length === 1 ? "" : "s"}</h2></header>
+  ${posts.length ? `<table><thead><tr><th>When</th><th>Clip</th><th>Where</th><th>Status</th><th></th></tr></thead><tbody>${posts.map(p => `<tr>
+    <td class="num" style="white-space:nowrap">${clock(p.due)}</td><td><a href="#inbox/${p.clip_id}">${esc(p.clip_title || "Clip")}</a>${p.error ? `<br><small style="color:#ff9aa0">${esc(p.error.slice(0,160))}</small>` : ""}</td>
+    <td>${PLAT[p.platform] || esc(p.platform)} <span class="faint">${esc(p.account)}</span></td>
+    <td><span class="pill ${p.status === "posted" ? "ok" : p.status === "failed" ? "failed" : ""}">${lbl[p.status] || p.status}</span>${p.remote_url ? ` <a href="${esc(p.remote_url)}" target="_blank" rel="noopener">View</a>` : ""}</td>
+    <td class="n" style="white-space:nowrap">${p.status === "scheduled" ? `<button class="btn sm" data-a="now" data-id="${p.id}">Post now</button> <button class="btn ghost sm" data-a="cancel" data-id="${p.id}">Cancel</button>` : p.status === "failed" ? `<button class="btn sm" data-a="retry" data-id="${p.id}">Try again</button>` : ""}</td></tr>`).join("")}</tbody></table>`
+    : `<div class="empty"><b>Nothing queued</b>Approve a clip in the inbox, or turn on auto-post for a streamer you have permission from.</div>`}</section>`;
+  main.querySelectorAll("[data-a]").forEach(b => b.onclick = () => act(b, async () => { await api(`/api/posts/${b.dataset.id}/${b.dataset.a}`, {method: "POST"}); viewQueue(); }, "Done"));
+}
+
+/* ---------------- Accounts ---------------- */
+async function viewAccounts() {
+  const [d] = await Promise.all([api("/api/accounts"), loadState()]);
+  const L = d.limits;
+  const mine = p => d.accounts.filter(a => a.platform === p).map(a => `<div class="swrow"><div><b>${esc(a.name)}</b><p>Every <input class="field num" style="width:64px;height:30px;display:inline-block" type="number" min="0" value="${a.settings.gap_min ?? ""}" placeholder="90" data-gap="${a.id}" aria-label="Minutes between posts"> min, at most <input class="field num" style="width:56px;height:30px;display:inline-block" type="number" min="0" value="${a.settings.daily_cap ?? ""}" placeholder="6" data-cap="${a.id}" aria-label="Posts per day"> a day</p></div><button class="btn ghost sm" data-del="${a.id}">Disconnect</button></div>`).join("");
+  const lim = p => `${L[p].label}: ${L[p].min_sec}–${L[p].max_sec} s, up to ${L[p].max_mb} MB.`;
+  main.innerHTML = `<div class="titlerow"><div><h1>Accounts</h1><p class="sub">Posting goes through each platform's official API. No passwords are stored, only tokens, on this PC.</p></div></div>
+  <div class="sect"><div><h2>Instagram Reels</h2><p>Needs a Professional (Creator or Business) account. ${lim("instagram")} See docs/CONNECT_ACCOUNTS.md for the two-minute token setup.</p></div>
+    <div class="panel">${mine("instagram")}<form id="f-ig" class="fgrid" style="${d.accounts.some(a => a.platform === "instagram") ? "margin-top:14px" : ""}"><div class="wide"><label class="f" for="ig-t">Access token</label><input class="field" id="ig-t" name="token" required autocomplete="off" placeholder="From your Meta app → Instagram API → Generate token"></div><div class="wide"><button class="btn primary">Connect Instagram</button></div></form></div></div>
+  <div class="sect"><div><h2>YouTube Shorts</h2><p>${lim("youtube")} Uses Google sign-in.</p></div>
+    <div class="panel">${mine("youtube")}${d.can.youtube ? `<a class="btn primary" href="/oauth/youtube/start" style="margin-top:${d.accounts.some(a=>a.platform==="youtube") ? 14 : 0}px">Connect YouTube</a>` : `<p class="muted" style="margin:0">Add <span class="code">GOOGLE_CLIENT_ID</span> and <span class="code">GOOGLE_CLIENT_SECRET</span> to <span class="code">.env</span>, restart, then connect here.</p>`}</div></div>
+  <div class="sect"><div><h2>TikTok</h2><p>${lim("tiktok")} Until TikTok approves your app, posts are visible only to you.</p></div>
+    <div class="panel">${mine("tiktok")}${d.can.tiktok ? `<form id="f-tt" class="fgrid"><div class="wide"><button type="button" class="btn" id="tt-open">Open TikTok sign-in</button></div><div class="wide"><label class="f" for="tt-code">Address you landed on after signing in</label><input class="field" id="tt-code" name="code" required placeholder="https://your-redirect/?code=..."></div><div class="wide"><button class="btn primary">Connect TikTok</button></div></form>` : `<p class="muted" style="margin:0">Add <span class="code">TIKTOK_CLIENT_KEY</span>, <span class="code">TIKTOK_CLIENT_SECRET</span> and <span class="code">TIKTOK_REDIRECT_URI</span> to <span class="code">.env</span>.</p>`}</div></div>
+  <div class="sect"><div><h2>Facebook Reels</h2><p>${lim("facebook")} Posts to a Facebook Page.</p></div>
+    <div class="panel">${mine("facebook")}<form id="f-fb" class="fgrid"><div><label class="f" for="fb-id">Page ID</label><input class="field" id="fb-id" name="page_id" required></div><div><label class="f" for="fb-t">Page access token</label><input class="field" id="fb-t" name="token" required autocomplete="off"></div><div class="wide"><button class="btn primary">Connect Facebook Page</button></div></form></div></div>`;
+  const post = (id, url, ok) => { const f = $(id); if (f) f.onsubmit = e => { e.preventDefault(); act(f.querySelector(".btn.primary"), async () => { await api(url, {method: "POST", body: Object.fromEntries(new FormData(f))}); viewAccounts(); }, ok); }; };
+  post("#f-ig", "/api/accounts/instagram", "Instagram connected"); post("#f-fb", "/api/accounts/facebook", "Facebook Page connected"); post("#f-tt", "/api/accounts/tiktok", "TikTok connected");
+  if ($("#tt-open")) $("#tt-open").onclick = async () => { try { const r = await api("/api/accounts/tiktok/start"); window.open(r.url, "_blank", "noopener"); } catch (e) { toast(e.message, true); } };
+  main.querySelectorAll("[data-del]").forEach(b => b.onclick = () => act(b, async () => { await api(`/api/accounts/${b.dataset.del}`, {method: "DELETE"}); viewAccounts(); }, "Disconnected"));
+  main.querySelectorAll("[data-gap],[data-cap]").forEach(i => i.onchange = () => api(`/api/accounts/${i.dataset.gap || i.dataset.cap}`, {method: "PATCH", body: {[i.dataset.gap ? "gap_min" : "daily_cap"]: +i.value}}).then(() => toast("Saved")).catch(e => toast(e.message, true)));
+}
+
+/* ---------------- Settings ---------------- */
+async function viewSettings() {
+  const [d] = await Promise.all([api("/api/settings"), loadState()]);
+  const t = S.state.tools, pol = d.guard_policy, locked = ["copyright_music","sexual","personal_info"];
+  const tool = (name, on, how) => `<div class="swrow"><div><b>${name}</b><p>${on ? "Installed and working." : how}</p></div><span class="pill ${on ? "ok" : ""}">${on ? "On" : "Off"}</span></div>`;
+  main.innerHTML = `<div class="titlerow"><div><h1>Guard &amp; settings</h1><p class="sub">How strict the Guard is, which AI picks the clips, and what's installed on this PC.</p></div></div>
+  <div class="sect"><div><h2>What the Guard does with each risk</h2><p>Block: never posted unless you write a reason. Look: waits in the inbox. Note: shown, still allowed. Copyrighted songs, sexual content and personal info are always blocked.</p></div>
+    <div class="panel"><form id="f-pol">${Object.entries(d.risks).map(([k, r]) => `<div class="risk"><label for="r-${k}">${esc(r.label)}</label>${locked.includes(k) ? `<span class="pill block" style="justify-self:start">Always blocked</span>` : `<select class="field" id="r-${k}" name="${k}">${[["block","Block"],["review","Look at it"],["warn","Note only"]].map(([v,l]) => `<option value="${v}" ${(pol[k] || r.default) === v ? "selected" : ""}>${l}</option>`).join("")}</select>`}</div>`).join("")}
+    <div class="acts" style="margin-top:14px"><button class="btn primary">Save Guard rules</button></div></form></div></div>
+  <div class="sect"><div><h2>AI that picks clips</h2><p>Optional. Without it, clips are picked from loudness, chaos and chat. With it, the AI reads the transcript, writes hooks and captions, and flags risky moments. A fast, cheap model is right.</p></div>
+    <div class="panel"><form id="f-ai" class="fgrid">
+      <div><label class="f" for="ai-p">Service</label><select class="field" id="ai-p" name="provider"><option value="">None</option>${Object.entries(d.ai.providers).map(([k,l]) => `<option value="${k}" ${d.ai.provider === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+      <div><label class="f" for="ai-m">Model</label><input class="field" id="ai-m" name="model" value="${esc(d.ai.model)}" placeholder="for example gemini-2.5-flash"></div>
+      <div class="wide"><label class="f" for="ai-k">API key</label><input class="field" id="ai-k" name="key" type="password" autocomplete="off" placeholder="${d.ai.has_key ? "Saved. Paste a new one to replace it." : "Paste your key"}"></div>
+      <div class="wide"><label class="f" for="ai-b">Address (custom service only)</label><input class="field" id="ai-b" name="base_url" value="${esc(d.ai.base_url)}" placeholder="https://…/v1"></div>
+      <div class="wide acts"><button class="btn primary">Save and test</button></div></form></div></div>
+  <div class="sect"><div><h2>On this PC</h2><p>Each one is optional and makes clips or checks better. Install, then restart Byditors Cut.</p></div>
+    <div class="panel">${tool("Speech to text (captions, Hindi/Hinglish too)", t.whisper, `<span class="code">pip install faster-whisper</span>`)}
+      ${tool("Music removal, voice kept", t.demucs, `<span class="code">pip install demucs</span> — strips background songs from a clip.`)}
+      ${tool("Song identification", t.audd, `Set <span class="code">AUDD_API_TOKEN</span> in .env (audd.io) to name copyrighted songs.`)}
+      ${tool("Moderation model", t.moderation, `Set <span class="code">OPENAI_MODERATION_KEY</span> in .env. The moderation endpoint is free with an OpenAI key.`)}</div></div>`;
+  $("#f-pol").onsubmit = e => { e.preventDefault(); act(e.submitter, () => api("/api/settings/guard", {method: "POST", body: Object.fromEntries(new FormData(e.target))}), "Guard rules saved"); };
+  $("#f-ai").onsubmit = e => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.test = !!b.provider; act(e.submitter, async () => { await api("/api/settings/ai", {method: "POST", body: b}); loadState(); }, "Saved and working"); };
+}
+
+const VIEWS = {today: viewToday, inbox: viewInbox, streamers: viewStreamers, queue: viewQueue, accounts: viewAccounts, settings: viewSettings};
+
+/* ---------------- top bar: clip a link / upload ---------------- */
+async function submitLink(url) {
+  try { await api("/api/jobs", {method: "POST", body: {url}}); toast("Added. It shows under Working on."); $("#clipurl").value = ""; if (S.view === "today") viewToday(); else location.hash = "#today"; }
+  catch (e) { toast(e.message, true); }
+}
+$("#clipform").onsubmit = e => { e.preventDefault(); submitLink($("#clipurl").value.trim()); };
+$("#clipform label[for=upfile]").onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#upfile").click(); } };
+$("#upfile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append("file", f); toast(`Uploading ${f.name}…`);
+  try { await api("/api/upload", {method: "POST", body: fd}); toast("Uploaded. Clipping it now."); location.hash = "#today"; viewToday(); } catch (err) { toast(err.message, true); }
+  e.target.value = "";
+};
+route();
+</script>
+</body>
+</html>

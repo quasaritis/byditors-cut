@@ -1,0 +1,12 @@
+{
+  "_note": "Terms per risk, matched as whole words, case-insensitive. Add your own. English + Hindi/Hinglish. 'hate' is left for you to fill for your audience; the moderation model and the AI cover it too.",
+  "gambling": ["stake", "stake.com", "stake us", "roobet", "rollbit", "bc.game", "1xbet", "parimatch", "dafabet", "bet365", "betway", "casino", "slots", "slot machine", "bonus buy", "max win", "free spins", "sweet bonanza", "gates of olympus", "sugar rush", "plinko", "blackjack", "roulette", "crash game", "aviator", "satta", "satta matka", "teen patti cash", "rummy cash", "betting app", "use my code", "deposit bonus"],
+  "drugs": ["cocaine", "coke line", "meth", "mdma", "molly", "lsd", "acid trip", "heroin", "weed", "ganja", "charas", "maal phoonk", "smoke up", "joint", "edibles", "shrooms"],
+  "violence": ["i will kill you", "kill you", "shoot you", "stab you", "maar dunga", "jaan se maar", "goli maar", "khoon kar"],
+  "dangerous_act": ["don't try this at home", "dont try this at home", "blackout challenge", "choking challenge", "fire challenge", "while driving", "no helmet", "stunt on the highway"],
+  "sexual": ["nudes", "onlyfans", "porn", "pornhub", "sex tape", "send nudes", "xxx"],
+  "self_harm": ["kill myself", "end my life", "suicide"],
+  "minor": ["i'm 12", "i am 12", "i'm 13", "i am 13", "i'm 14", "i am 14", "i'm 15", "i am 15", "underage", "my little cousin"],
+  "profanity": ["fuck", "fucking", "motherfucker", "shit", "bitch", "behenchod", "bhenchod", "madarchod", "chutiya", "bhosdike", "bhosdi", "gaand", "bc", "mc"],
+  "hate": []
+}

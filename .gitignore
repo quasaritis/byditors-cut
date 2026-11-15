@@ -1,0 +1,10 @@
+.env
+data/
+secrets/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.taste-skill/
+*.log

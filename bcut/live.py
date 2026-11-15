@@ -1,0 +1,325 @@
+"""Live clipping: record a stream in short pieces, watch sound + chat for spikes, and cut clips while the stream is
+still running. Only the last `BCUT_LIVE_BUFFER_MIN` minutes are kept on disk.
+
+Chat is read anonymously from Twitch (IRC) and Kick (their public websocket) when possible; clipping still works
+without it.
+"""
+from __future__ import annotations
+
+import csv
+import json
+import re
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+import numpy as np
+
+from . import brain, config, db, media, pipeline, signals, transcribe
+
+_sessions: dict[str, "Session"] = {}
+_lock = threading.Lock()
+KICK_PUSHER_KEY = "32cbd69e4b950bf97679"
+
+
+def active() -> list["Session"]:
+    with _lock:
+        return [s for s in _sessions.values() if s.running]
+
+
+def active_for(streamer_id: str) -> "Session | None":
+    return next((s for s in active() if s.streamer and s.streamer["id"] == streamer_id), None)
+
+
+def get(jid: str) -> "Session | None":
+    with _lock:
+        return _sessions.get(jid)
+
+
+def resolve(url: str) -> tuple[str, dict, dict]:
+    """The direct stream address (HLS), the headers it needs, and the stream's info."""
+    if Path(url).exists() or url.startswith("file://"):
+        p = url.replace("file://", "")
+        return p, {}, {"title": Path(p).stem, "is_live": True}
+    import yt_dlp
+
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "format": "best[height<=1080]/best",
+                           "socket_timeout": 20}) as y:
+        info = y.extract_info(url, download=False)
+    if not info.get("is_live", True) and info.get("live_status") not in (None, "is_live"):
+        raise RuntimeError("Not live")
+    return info["url"], info.get("http_headers") or {}, info
+
+
+class Session:
+    def __init__(self, streamer: dict | None, url: str):
+        self.streamer = streamer
+        self.url = url
+        self.job = db.insert("jobs", {
+            "id": db.new_id("l"), "kind": "live", "url": url, "title": f"{(streamer or {}).get('name', 'Live')} — live",
+            "streamer_id": (streamer or {}).get("id"), "status": "recording", "step": "Connecting",
+            "meta": {"started": time.time()}, "created": time.time(), "updated": time.time()})
+        self.dir = config.DATA / "live" / self.job["id"]
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.running = True
+        self.started = time.time()
+        self.segs: list[dict] = []           # {"file", "t0", "t1"} in seconds since start
+        self.db: list[float] = []
+        self.flux: list[float] = []
+        self.chat: list[tuple[float, str]] = []
+        self.last_clip_at = -1e9
+        self.pending: list[float] = []
+        self.clips = 0
+        self.title = ""
+        self.proc: subprocess.Popen | None = None
+        self.local = Path(url).exists() or url.startswith("file://")
+        self.workers: list[threading.Thread] = []
+
+    # ------------------------------------------------------------ recording
+    def start(self):
+        threading.Thread(target=self._record, daemon=True, name=f"rec-{self.job['id']}").start()
+        threading.Thread(target=self._analyse, daemon=True, name=f"ana-{self.job['id']}").start()
+        threading.Thread(target=self._chat, daemon=True, name=f"chat-{self.job['id']}").start()
+        return self
+
+    def now(self) -> float:
+        return time.time() - self.started
+
+    def _record(self):
+        run, misses = 0, 0
+        while self.running:
+            try:
+                src, headers, info = resolve(self.url)
+                self.title = info.get("title") or self.title
+                misses = 0
+            except Exception:  # noqa: BLE001
+                misses += 1
+                if misses >= 3:
+                    break
+                time.sleep(20)
+                continue
+            offset = self.now()
+            cmd = [media.need("ffmpeg"), "-v", "error", "-y"]
+            if self.local:
+                cmd += ["-re"]
+            else:
+                if headers:
+                    cmd += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in headers.items())]
+                cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "10"]
+            cmd += ["-i", src, "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-f", "segment",
+                    "-segment_time", str(config.LIVE_SEGMENT_SEC), "-reset_timestamps", "1",
+                    "-segment_list", f"r{run}.csv", "-segment_list_type", "csv", f"r{run}_%06d.ts"]
+            db.update("jobs", self.job["id"], step="Recording" + (f" — {self.title[:60]}" if self.title else ""))
+            self.proc = subprocess.Popen(cmd, cwd=self.dir, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            while self.proc.poll() is None and self.running:
+                self._collect(run, offset)
+                time.sleep(2)
+            self._collect(run, offset)
+            run += 1
+            if self.local or not self.running:
+                break
+            time.sleep(5)  # stream hiccup: try again; three failed resolves in a row = stream over
+        self.running = False
+        self._finish()
+
+    def _collect(self, run: int, offset: float):
+        lst = self.dir / f"r{run}.csv"
+        if not lst.exists():
+            return
+        known = {s["file"] for s in self.segs}
+        with lst.open() as f:
+            for row in csv.reader(f):
+                if len(row) >= 3 and row[0] not in known:
+                    self.segs.append({"file": row[0], "t0": offset + float(row[1]), "t1": offset + float(row[2]),
+                                      "read": False})
+
+    # ------------------------------------------------------------ chat
+    def _chat(self):
+        plat = media.platform_of(self.url)
+        name = (re.findall(r"(?:twitch\.tv|kick\.com)/([^/?#]+)", self.url) or [""])[0].lower()
+        if not name:
+            return
+        try:
+            from websockets.sync.client import connect
+        except ImportError:
+            return
+        while self.running:
+            try:
+                if plat == "twitch":
+                    with connect("wss://irc-ws.chat.twitch.tv:443", open_timeout=15) as ws:
+                        for line in ("PASS SCHMOOPIIE", "NICK justinfan" + str(int(time.time()) % 99999),
+                                     f"JOIN #{name}"):
+                            ws.send(line)
+                        while self.running:
+                            for msg in str(ws.recv(timeout=60)).split("\r\n"):
+                                if msg.startswith("PING"):
+                                    ws.send("PONG :tmi.twitch.tv")
+                                elif " PRIVMSG " in msg:
+                                    self.chat.append((self.now(), msg.split(" :", 1)[-1][:200]))
+                elif plat == "kick":
+                    import httpx
+
+                    r = httpx.get(f"https://kick.com/api/v2/channels/{name}", timeout=15,
+                                  headers={"accept": "application/json", "user-agent": "Mozilla/5.0"})
+                    room = r.json()["chatroom"]["id"]
+                    url = (f"wss://ws-us2.pusher.com/app/{KICK_PUSHER_KEY}?protocol=7&client=js&version=8.4.0"
+                           "&flash=false")
+                    with connect(url, open_timeout=15) as ws:
+                        ws.send(json.dumps({"event": "pusher:subscribe",
+                                            "data": {"auth": "", "channel": f"chatrooms.{room}.v2"}}))
+                        while self.running:
+                            m = json.loads(ws.recv(timeout=90))
+                            if m.get("event") == "pusher:ping":
+                                ws.send(json.dumps({"event": "pusher:pong", "data": {}}))
+                            elif "ChatMessage" in m.get("event", ""):
+                                content = json.loads(m.get("data") or "{}").get("content", "")
+                                self.chat.append((self.now(), str(content)[:200]))
+                else:
+                    return
+            except Exception:  # noqa: BLE001
+                time.sleep(30)  # chat is a bonus; keep trying quietly
+            if len(self.chat) > 50000:
+                self.chat = self.chat[-20000:]
+
+    # ------------------------------------------------------------ spotting moments
+    def _analyse(self):
+        last_step = 0
+        while self.running or any(not s["read"] for s in self.segs):
+            for s in list(self.segs):
+                if s["read"] or s["t1"] > self.now() + 1:
+                    continue
+                a = media.read_audio(self.dir / s["file"])
+                s["read"] = True
+                i0 = int(s["t0"] / signals.HOP)
+                d, fl = signals.loudness(a), signals._flux(a)
+                need = i0 + len(d)
+                if need > len(self.db):
+                    pad = need - len(self.db)
+                    self.db += [float(np.median(self.db[-60:])) if self.db else -60.0] * pad
+                    self.flux += [0.0] * pad
+                self.db[i0:i0 + len(d)] = d.tolist()
+                self.flux[i0:i0 + len(fl)] = fl.tolist()
+            recorded = max((s["t1"] for s in self.segs), default=0)
+            n = len(self.db)
+            if n > 120:
+                tail = slice(max(0, n - 1200), n)
+                dbt = np.array(self.db[tail])
+                sig = signals._mix(dbt, signals.zscore(dbt), signals.zscore(np.log1p(np.array(self.flux[tail]))),
+                                   np.zeros(len(dbt)),
+                                   signals.zscore(signals.chat_velocity(
+                                       [(t - tail.start * signals.HOP, m) for t, m in self.chat
+                                        if t >= tail.start * signals.HOP], len(dbt))) if self.chat else np.zeros(len(dbt)))
+                base = tail.start
+                for i in range(max(last_step, base + 60), n):
+                    k = i - base
+                    t = i * signals.HOP
+                    strong = sig["loud_z"][k] > 2.2 or sig["chat_z"][k] > 2.5 or sig["burst_z"][k] > 2.8
+                    if sig["excite"][k] >= 0.95 and strong and t - self.last_clip_at > config.LIVE_CLIP_COOLDOWN_SEC:
+                        self.pending.append(t)
+                        self.last_clip_at = t
+                last_step = n
+            for t in list(self.pending):
+                if recorded >= t + 22:
+                    self.pending.remove(t)
+                    self._cut(max(0.0, t - 45), t + 22, auto=True, focus=t)
+            self._trim()
+            db.update("jobs", self.job["id"], progress=min(0.99, recorded / 3600),
+                      meta={**self.job["meta"], "recorded": round(recorded), "clips": self.clips,
+                            "chat_msgs": len(self.chat), "title": self.title})
+            time.sleep(4)
+
+    def _window(self, a: float, b: float) -> Path | None:
+        parts = [s for s in self.segs if s["t1"] > a and s["t0"] < b and (self.dir / s["file"]).exists()]
+        if not parts:
+            return None
+        lst = self.dir / f"w_{int(a)}.txt"
+        lst.write_text("".join(f"file '{p['file']}'\n" for p in parts))
+        out = self.dir / f"w_{int(a)}_{int(b)}.mp4"
+        subprocess.run([media.need("ffmpeg"), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst.name,
+                        "-c", "copy", "-bsf:a", "aac_adtstoasc", out.name], cwd=self.dir, capture_output=True)
+        if not out.exists():
+            subprocess.run([media.need("ffmpeg"), "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst.name,
+                            "-c", "copy", out.name], cwd=self.dir, capture_output=True)
+        lst.unlink(missing_ok=True)
+        return out if out.exists() else None
+
+    def _cut(self, a: float, b: float, auto: bool, exact: bool = False, focus: float | None = None):
+        def work():
+            try:
+                win = self._window(a, b)
+                if not win:
+                    return
+                pr = media.probe(win)
+                tr = transcribe.transcribe(win, language=(self.streamer or {}).get("language", ""))
+                cuts = media.scene_cuts(win)
+                chat = [(t - a, m) for t, m in self.chat if a <= t <= b]
+                info = {"title": self.title, "webpage_url": self.url, "uploader": (self.streamer or {}).get("name", ""),
+                        "duration": None}
+                if exact:
+                    pick = {"start": 0.0, "end": round(pr["duration"], 2), "score": 70, "hook": "",
+                            "title": f"{(self.streamer or {}).get('name', 'Live')} moment", "why": "You pressed Clip it",
+                            "flags": []}
+                else:
+                    sig = signals.combined(media.read_audio(win), cuts, chat)
+                    picks = brain.find_clips(tr["words"], sig, pr["duration"], self.title,
+                                             (self.streamer or {}).get("name", ""), n=1,
+                                             min_len=config.CLIP_MIN, max_len=min(config.CLIP_MAX, 50),
+                                             focus=None if focus is None else focus - a)
+                    if not picks:
+                        return
+                    pick = picks[0]
+                    pick["why"] = ("Live spike: " + pick.get("why", "")).strip()
+                pipeline.make_clip(self.job, win, pr, info, pick, tr["words"], self.streamer, cuts)
+                self.clips += 1
+                at = focus if focus is not None else a
+                db.log(f"Live clip from {(self.streamer or {}).get('name', 'stream')} at "
+                       f"{int(at // 60)}:{int(at % 60):02d} into the stream", streamer_id=(self.streamer or {}).get("id"))
+            except Exception as e:  # noqa: BLE001
+                db.log(f"Live clip failed: {str(e)[:200]}", "error", (self.streamer or {}).get("id"))
+        th = threading.Thread(target=work, daemon=True)
+        self.workers.append(th)
+        th.start()
+
+    def clip_last(self, seconds: float = 45):
+        """The dashboard's "Clip it" button: the last N seconds, exactly."""
+        end = max((s["t1"] for s in self.segs), default=0)
+        self._cut(max(0.0, end - seconds), end, auto=False, exact=True)
+
+    def _trim(self):
+        keep_from = self.now() - config.LIVE_BUFFER_MIN * 60
+        busy = min(self.pending, default=1e12) - 70
+        for s in list(self.segs):
+            if s["t1"] < min(keep_from, busy):
+                (self.dir / s["file"]).unlink(missing_ok=True)
+                self.segs.remove(s)
+        for w in self.dir.glob("w_*.mp4"):
+            if time.time() - w.stat().st_mtime > 1800:
+                w.unlink(missing_ok=True)
+
+    def stop(self):
+        self.running = False
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+
+    def _finish(self):
+        time.sleep(6)  # let the analyser read the last pieces
+        for th in list(self.workers):
+            th.join(timeout=900)
+        db.update("jobs", self.job["id"], status="stopped", step=f"Stream ended — {self.clips} clips",
+                  progress=1.0)
+
+
+def start(streamer: dict | None, url: str) -> Session:
+    if len(active()) >= config.LIVE_MAX_PARALLEL:
+        raise RuntimeError(f"Already recording {config.LIVE_MAX_PARALLEL} streams (BCUT_LIVE_MAX_PARALLEL)")
+    s = Session(streamer, url)
+    with _lock:
+        _sessions[s.job["id"]] = s
+    return s.start()
+
+
+def recover() -> None:
+    """After a restart, recordings that were running are closed; the radar starts them again if still live."""
+    for j in db.query("SELECT id FROM jobs WHERE kind='live' AND status='recording'"):
+        db.update("jobs", j["id"], status="stopped", step="Stopped (app restarted)")
