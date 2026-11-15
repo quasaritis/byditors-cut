@@ -19,6 +19,14 @@ This started from [PeakCut](https://github.com/haziqahmedqasmi/PeakCut) and adds
 | Languages | Parakeet (English-first) | **faster-whisper**: 99 languages, Hindi and Hinglish included, GPU if available |
 | Posting | YouTube, Instagram, TikTok | + **Facebook Reels**, a last Guard check before every post, quiet hours, per-account spacing and caps |
 
+## Set it up with your AI assistant
+
+Copy this into ChatGPT, Claude, Gemini, Cursor or any coding assistant that can run commands on your computer:
+
+> Set up and run https://github.com/quasaritis/byditors-cut on my computer. Follow its AGENTS.md.
+
+[AGENTS.md](AGENTS.md) walks the assistant through installing, running and testing it.
+
 ## Quick start
 
 You need **Python 3.10+** and **ffmpeg** on your PATH ([Windows build](https://www.gyan.dev/ffmpeg/builds/), `brew install ffmpeg`, `sudo apt install ffmpeg`).
