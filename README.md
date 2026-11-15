@@ -39,6 +39,8 @@ The first run sets up a private Python environment and installs everything (a fe
 By hand:
 
 ```bash
+git clone https://github.com/quasaritis/byditors-cut.git
+cd byditors-cut
 python -m venv .venv
 .venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
