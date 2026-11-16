@@ -403,7 +403,7 @@ def _acc_public(a: dict) -> dict:
 @app.get("/api/accounts")
 def accounts():
     return {"accounts": [_acc_public(a) for a in db.query("SELECT * FROM accounts ORDER BY platform, name")],
-            "can": {"youtube": bool(config.GOOGLE_CLIENT_ID), "tiktok": bool(config.TIKTOK_CLIENT_KEY),
+            "can": {"youtube": bool(platforms.google_client()[0]), "tiktok": bool(config.TIKTOK_CLIENT_KEY),
                     "instagram": True, "facebook": True},
             "limits": rules.PLATFORMS}
 
@@ -433,10 +433,21 @@ def connect_fb(b: dict = Depends(_body)):
     return _save_account("facebook", res)
 
 
+@app.post("/api/settings/google")
+def save_google(b: dict = Depends(_body)):
+    cid, sec = str(b.get("id", "")).strip(), str(b.get("secret", "")).strip()
+    if cid and not cid.endswith(".apps.googleusercontent.com"):
+        raise HTTPException(400, "That isn't a Google client ID. It ends in .apps.googleusercontent.com")
+    if cid and not sec:
+        raise HTTPException(400, "Paste the client secret too (it starts with GOCSPX-)")
+    db.kv_set("google_client", {"id": cid, "secret": sec} if cid else {})
+    return {"youtube": bool(platforms.google_client()[0]), "redirect": platforms.yt_redirect()}
+
+
 @app.get("/oauth/youtube/start")
 def yt_start():
-    if not config.GOOGLE_CLIENT_ID:
-        raise HTTPException(400, "Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env first")
+    if not platforms.google_client()[0]:
+        raise HTTPException(400, "Paste your Google client ID and secret in Accounts → YouTube first")
     st = secrets.token_urlsafe(16)
     _oauth_states[st] = time.time()
     return RedirectResponse(platforms.yt_auth_url(st))

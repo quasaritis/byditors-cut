@@ -110,12 +110,20 @@ def post_facebook(account: dict, clip: dict, caption: str) -> tuple[str, str]:
 YT_SCOPES = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly"
 
 
+def google_client() -> tuple[str, str]:
+    """The Google OAuth client: pasted in the app (Accounts → YouTube), or GOOGLE_CLIENT_ID/SECRET in .env."""
+    g = db.kv_get("google_client", {}) or {}
+    if g.get("id") and g.get("secret"):
+        return g["id"], g["secret"]
+    return config.GOOGLE_CLIENT_ID, config.GOOGLE_CLIENT_SECRET
+
+
 def yt_redirect() -> str:
     return f"{config.PUBLIC_URL}/oauth/youtube"
 
 
 def yt_auth_url(state: str) -> str:
-    q = httpx.QueryParams({"client_id": config.GOOGLE_CLIENT_ID, "redirect_uri": yt_redirect(),
+    q = httpx.QueryParams({"client_id": google_client()[0], "redirect_uri": yt_redirect(),
                            "response_type": "code", "scope": YT_SCOPES, "access_type": "offline",
                            "prompt": "consent", "state": state})
     return f"https://accounts.google.com/o/oauth2/v2/auth?{q}"
@@ -123,7 +131,7 @@ def yt_auth_url(state: str) -> str:
 
 def yt_connect(code: str) -> dict:
     tok = _check(httpx.post("https://oauth2.googleapis.com/token", data={
-        "code": code, "client_id": config.GOOGLE_CLIENT_ID, "client_secret": config.GOOGLE_CLIENT_SECRET,
+        "code": code, "client_id": google_client()[0], "client_secret": google_client()[1],
         "redirect_uri": yt_redirect(), "grant_type": "authorization_code"}))
     ch = _check(httpx.get("https://www.googleapis.com/youtube/v3/channels", params={"part": "snippet", "mine": "true"},
                           headers={"authorization": f"Bearer {tok['access_token']}"}))
@@ -134,7 +142,7 @@ def yt_connect(code: str) -> dict:
 
 def _yt_token(account: dict) -> str:
     tok = _check(httpx.post("https://oauth2.googleapis.com/token", data={
-        "client_id": config.GOOGLE_CLIENT_ID, "client_secret": config.GOOGLE_CLIENT_SECRET,
+        "client_id": google_client()[0], "client_secret": google_client()[1],
         "refresh_token": account["secrets"]["refresh_token"], "grant_type": "refresh_token"}))
     return tok["access_token"]
 

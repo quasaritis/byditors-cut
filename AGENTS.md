@@ -25,6 +25,8 @@ python -m bcut                     # add --no-browser to skip opening a tab
 
 ## 2. Optional setup the person may want
 
+The complete, non-technical walkthrough for all of this is `docs/SETUP_GUIDE.md` (PDF: `Byditors Cut - Setup Guide.pdf`, rebuilt with `python scripts/build_guide.py`). Keep it in step with the app when you change a screen.
+
 - **AI for picking clips (a free Gemini key works).** Dashboard → Guard & settings → AI: choose Google Gemini, paste a key from https://aistudio.google.com/apikey, press **Find models**, then **Save and test**. Or set `BCUT_AI_PROVIDER`, `BCUT_AI_KEY` and `BCUT_AI_MODEL` in `.env`.
 - **Posting to Instagram, YouTube, TikTok and Facebook:** follow `docs/CONNECT_ACCOUNTS.md`.
 - **Phone alerts (Telegram):** follow `docs/PHONE_ALERTS.md`.

@@ -2,6 +2,8 @@
 
 A clipping studio that runs on your own PC. It turns long videos and live streams into vertical, captioned clips, checks each one for copyright and community-guideline problems, and posts the ones that pass to Instagram, YouTube, TikTok and Facebook.
 
+**New here? Read the [complete setup guide](docs/SETUP_GUIDE.md)** (also in the download as `Byditors Cut - Setup Guide.pdf`): install, free AI, YouTube, Instagram, streamers, daily uploads, Telegram alerts and fixes, step by step.
+
 Add a streamer once and it watches them for you. When they go live on Kick, Twitch, YouTube or TikTok, it records the stream and clips the big moments while the stream is still running. When they upload a new video or VOD, it downloads and clips that too.
 
 Before anything is posted, every clip goes through the **Rights & Safety Guard**.

@@ -1,5 +1,7 @@
 # Connecting your accounts
 
+> The full click-by-click version, with what to expect at each step and fixes for common errors, is in [SETUP_GUIDE.md](SETUP_GUIDE.md) parts 5–7.
+
 Byditors Cut posts through each platform's official API. You create a free developer app once per platform; it's yours, and only your accounts use it. Exact menu names move around; the platform docs linked below are the source of truth.
 
 ## Instagram Reels
@@ -16,9 +18,9 @@ Tokens last 60 days; Byditors Cut renews them automatically. Docs: [Content publ
 ## YouTube Shorts
 
 1. [console.cloud.google.com](https://console.cloud.google.com) → new project → **APIs & Services → Library** → enable **YouTube Data API v3**.
-2. **OAuth consent screen**: External, add yourself as a test user.
+2. **Google Auth Platform → Get started**: External. Then **Audience → Test users → Add users**: your Gmail, and check it saved.
 3. **Credentials → Create credentials → OAuth client ID → Web application**. Authorised redirect URI: `http://127.0.0.1:8777/oauth/youtube`
-4. Put the client ID and secret in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, restart, then **Accounts → Connect YouTube**.
+4. Paste the client ID and secret in **Accounts → YouTube Shorts** and press **Connect YouTube** (or put them in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`).
 
 Google keeps uploads from unverified API projects **private** until the project passes its audit. Request the audit from the API's quota page once things work. Videos up to 3 minutes in vertical format are shown as Shorts. Uploads now have their own quota: by default about 100 uploads a day per project (older guides that say 1,600 units, or 6 a day, are out of date).
 

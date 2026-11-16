@@ -381,3 +381,17 @@ def test_telegram_pairing_commands_and_buttons(monkeypatch):
     telegram.on_event("Posting to youtube failed: x", "error")
     assert len(sent) == 1
     db.kv_set("telegram", {})
+
+
+def test_google_client_pasted_in_app():
+    from fastapi.testclient import TestClient
+
+    from bcut.server import app
+    c = TestClient(app, base_url="http://127.0.0.1:8777")
+    assert c.post("/api/settings/google", json={"id": "nope", "secret": "x"}).status_code == 400
+    r = c.post("/api/settings/google", json={"id": "1-abc.apps.googleusercontent.com", "secret": "GOCSPX-x"})
+    assert r.status_code == 200 and r.json()["youtube"]
+    assert c.get("/api/accounts").json()["can"]["youtube"]
+    loc = c.get("/oauth/youtube/start", follow_redirects=False).headers["location"]
+    assert "client_id=1-abc.apps.googleusercontent.com" in loc
+    c.post("/api/settings/google", json={"id": ""})
