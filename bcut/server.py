@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from . import ai, config, db, guard, live, media, pipeline, publish, radar, tools, transcribe, winsys
@@ -145,8 +145,7 @@ def events(limit: int = 60):
 # ---------------------------------------------------------------- jobs
 
 @app.post("/api/jobs")
-async def new_job(request: Request):
-    b = await _body(request)
+def new_job(b: dict = Depends(_body)):
     url = str(b.get("url", "")).strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "Paste a full link that starts with https://")
@@ -223,9 +222,8 @@ def clip(cid: str):
 
 
 @app.patch("/api/clips/{cid}")
-async def edit_clip(cid: str, request: Request):
+def edit_clip(cid: str, b: dict = Depends(_body)):
     _need("clips", cid)
-    b = await _body(request)
     fields = {}
     if "title" in b:
         fields["title"] = str(b["title"])[:120]
@@ -235,9 +233,8 @@ async def edit_clip(cid: str, request: Request):
 
 
 @app.post("/api/clips/{cid}/approve")
-async def approve(cid: str, request: Request):
+def approve(cid: str, b: dict = Depends(_body)):
     c = _need("clips", cid)
-    b = await _body(request)
     g = dict(c["guard"] or {})
     if c["verdict"] == "block":
         reason = str(b.get("override_reason", "")).strip()
@@ -322,8 +319,7 @@ def streamers():
 
 
 @app.post("/api/streamers")
-async def add_streamer(request: Request):
-    b = await _body(request)
+def add_streamer(b: dict = Depends(_body)):
     f = _streamer_fields(b)
     if not f.get("name"):
         raise HTTPException(400, "Give the streamer a name")
@@ -337,9 +333,9 @@ async def add_streamer(request: Request):
 
 
 @app.patch("/api/streamers/{sid}")
-async def edit_streamer(sid: str, request: Request):
+def edit_streamer(sid: str, b: dict = Depends(_body)):
     _need("streamers", sid)
-    f = _streamer_fields(await _body(request))
+    f = _streamer_fields(b)
     if f.get("auto_post") and (db.get("streamers", sid) or {}).get("rights", "unknown") == "unknown" \
             and f.get("rights", "unknown") == "unknown":
         raise HTTPException(400, "Auto-post needs permission on record. Set Rights first.")
@@ -364,9 +360,8 @@ def check_streamer(sid: str):
 
 
 @app.post("/api/streamers/{sid}/record")
-async def record(sid: str, request: Request):
+def record(sid: str, b: dict = Depends(_body)):
     s = _need("streamers", sid)
-    b = await _body(request)
     url = b.get("url") or next(iter((s["channels"] or {}).values()), "")
     if live.active_for(sid):
         raise HTTPException(409, "Already recording")
@@ -380,11 +375,10 @@ async def record(sid: str, request: Request):
 # ---------------------------------------------------------------- live
 
 @app.post("/api/live/{jid}/clip")
-async def live_clip(jid: str, request: Request):
+def live_clip(jid: str, b: dict = Depends(_body)):
     s = live.get(jid)
     if not s or not s.running:
         raise HTTPException(404, "That recording isn't running")
-    b = await _body(request)
     s.clip_last(float(b.get("seconds", 45)))
     return {"ok": True}
 
@@ -420,8 +414,7 @@ def _save_account(platform: str, res: dict) -> dict:
 
 
 @app.post("/api/accounts/instagram")
-async def connect_ig(request: Request):
-    b = await _body(request)
+def connect_ig(b: dict = Depends(_body)):
     try:
         res = platforms.ig_connect(str(b.get("token", "")).strip(), b.get("host") or "graph.instagram.com")
     except Exception as e:  # noqa: BLE001
@@ -430,8 +423,7 @@ async def connect_ig(request: Request):
 
 
 @app.post("/api/accounts/facebook")
-async def connect_fb(request: Request):
-    b = await _body(request)
+def connect_fb(b: dict = Depends(_body)):
     try:
         res = platforms.fb_connect(str(b.get("page_id", "")).strip(), str(b.get("token", "")).strip())
     except Exception as e:  # noqa: BLE001
@@ -469,8 +461,7 @@ def tt_start():
 
 
 @app.post("/api/accounts/tiktok")
-async def tt_finish(request: Request):
-    b = await _body(request)
+def tt_finish(b: dict = Depends(_body)):
     code = str(b.get("code", "")).strip()
     if code.startswith("http"):
         code = (parse_qs(urlparse(code).query).get("code") or [""])[0]
@@ -483,9 +474,8 @@ async def tt_finish(request: Request):
 
 
 @app.patch("/api/accounts/{aid}")
-async def edit_account(aid: str, request: Request):
+def edit_account(aid: str, b: dict = Depends(_body)):
     a = _need("accounts", aid)
-    b = await _body(request)
     st = dict(a["settings"] or {})
     for k in ("gap_min", "daily_cap", "daily_target"):
         if k in b:
@@ -542,8 +532,7 @@ def get_settings():
 
 
 @app.post("/api/settings/ai")
-async def save_ai(request: Request):
-    b = await _body(request)
+def save_ai(b: dict = Depends(_body)):
     cur = db.kv_get("ai", {}) or {}
     if b.get("provider") and b["provider"] not in ai.PROVIDERS:
         raise HTTPException(400, "Unknown AI service")
@@ -562,9 +551,8 @@ async def save_ai(request: Request):
 
 
 @app.post("/api/settings/ai/models")
-async def ai_models(request: Request):
+def ai_models(b: dict = Depends(_body)):
     """List the models a key can use. Uses the key typed in the form, or the saved one."""
-    b = await _body(request)
     saved = ai.settings()
     prov = b.get("provider") or saved["provider"]
     if prov not in ai.PROVIDERS:
@@ -592,8 +580,7 @@ def pc_settings():
 
 
 @app.post("/api/settings/pc")
-async def save_pc_settings(request: Request):
-    b = await _body(request)
+def save_pc_settings(b: dict = Depends(_body)):
     if "keep_awake" in b:
         db.kv_set("keep_awake", bool(b["keep_awake"]))
     if "autostart" in b:
@@ -605,8 +592,7 @@ async def save_pc_settings(request: Request):
 
 
 @app.post("/api/settings/keys")
-async def save_keys(request: Request):
-    b = await _body(request)
+def save_keys(b: dict = Depends(_body)):
     for name in tools.KEYS:
         if name in b:
             tools.set_key(name, str(b[name] or ""))
@@ -614,8 +600,7 @@ async def save_keys(request: Request):
 
 
 @app.post("/api/settings/guard")
-async def save_guard(request: Request):
-    b = await _body(request)
+def save_guard(b: dict = Depends(_body)):
     pol = {k: v for k, v in b.items() if k in rules.RISK_POLICY and v in ("warn", "review", "block")}
     for k in ("copyright_music", "sexual", "personal_info"):
         pol.pop(k, None)  # these stay blocked: no setting turns them off
