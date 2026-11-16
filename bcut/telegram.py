@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -128,14 +129,39 @@ def _clip_text(clip: dict) -> str:
     return "\n".join(lines)[:1000]
 
 
+def preview(clip: dict) -> Path | None:
+    """A small phone preview (480p, a few MB) so clips arrive in seconds even on slow upload speeds."""
+    f = Path(clip.get("file") or "")
+    if not f.exists():
+        return None
+    out = f.with_name(f.stem + "_tg.mp4")
+    if out.exists() and out.stat().st_mtime >= f.stat().st_mtime:
+        return out
+    try:
+        from . import media
+
+        subprocess.run([media.need("ffmpeg"), "-v", "error", "-y", "-i", str(f), "-vf", "scale=-2:854",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-maxrate", "900k", "-bufsize", "1800k",
+                        "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", str(out)],
+                       check=True, timeout=300, **_no_window())
+        return out
+    except Exception:  # noqa: BLE001
+        out.unlink(missing_ok=True)
+        return f if f.stat().st_size < MAX_VIDEO_MB * 2 ** 20 else None
+
+
+def _no_window() -> dict:
+    return {"creationflags": 0x08000000} if os.name == "nt" else {}
+
+
 def send_clip(clip: dict, chat_id: int | None = None) -> None:
     chat = chat_id or _owner()
     if not chat:
         return
     try:
-        f = Path(clip.get("file") or "")
+        f = preview(clip) or Path("")
         kb = _buttons(clip)
-        if f.exists() and f.stat().st_size < MAX_VIDEO_MB * 2 ** 20:
+        if f.is_file() and f.stat().st_size < MAX_VIDEO_MB * 2 ** 20:
             with f.open("rb") as fh:
                 _call("sendVideo", files={"video": (f.name, fh, "video/mp4")}, timeout=300, chat_id=chat,
                       caption=_clip_text(clip), supports_streaming="true", reply_markup=kb)
@@ -215,14 +241,28 @@ def _today() -> str:
             + (f"{waiting} waiting for you: /review" if waiting else "Nothing waiting for you."))
 
 
+_reviewing = threading.Lock()
+
+
 def _review(chat: int) -> None:
     rows = db.query("SELECT * FROM clips WHERE state='new' AND verdict!='pass' ORDER BY created DESC LIMIT 5")
     if not rows:
         say("Nothing waiting for your OK.", chat)
         return
-    say(f"{len(rows)} newest clip{'s' if len(rows) != 1 else ''} waiting:", chat)
-    for c in rows:
-        send_clip(db.get("clips", c["id"]), chat)
+    if not _reviewing.acquire(blocking=False):
+        say("Still sending the last batch, one moment.", chat)
+        return
+    say(f"Sending the {len(rows)} newest clip{'s' if len(rows) != 1 else ''} waiting for your OK…", chat)
+
+    def work():
+        try:
+            for c in rows:
+                clip = db.get("clips", c["id"])
+                if clip and clip["state"] == "new":
+                    send_clip(clip, chat)
+        finally:
+            _reviewing.release()
+    threading.Thread(target=work, daemon=True).start()
 
 
 def _approve(cid: str) -> str:
