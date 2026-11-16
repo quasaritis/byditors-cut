@@ -339,3 +339,45 @@ def test_live_failure_backs_off(monkeypatch):
     j = db.get("jobs", s.job["id"])
     assert j["status"] == "failed" and "Not live" in j["error"]
     assert live.backing_off("sX")
+
+
+def test_telegram_pairing_commands_and_buttons(monkeypatch):
+    from bcut import telegram
+
+    out = []
+    monkeypatch.setattr(telegram, "_call", lambda method, **kw: out.append((method, kw)) or {"username": "bcut_bot"})
+    db.kv_set("telegram", {"token": "123:abc"})
+    code = telegram.pairing_code()
+    # a stranger with the wrong code gets nothing useful and isn't paired
+    telegram._handle({"update_id": 1, "message": {"chat": {"id": 999}, "text": "/start 000000", "from": {}}})
+    assert not telegram.settings().get("chat_id")
+    # the owner pairs with the right code
+    telegram._handle({"update_id": 2, "message": {"chat": {"id": 42}, "text": f"/start {code}",
+                                                   "from": {"username": "harsh"}}})
+    assert telegram.settings()["chat_id"] == 42 and telegram.public()["paired"]
+    # strangers are ignored after pairing
+    out.clear()
+    telegram._handle({"update_id": 3, "message": {"chat": {"id": 999}, "text": "/status"}})
+    assert out == []
+    telegram._handle({"update_id": 4, "message": {"chat": {"id": 42}, "text": "/today"}})
+    assert out and out[-1][0] == "sendMessage" and "Today:" in out[-1][1]["text"]
+    # a clip waiting for review: Approve from the phone marks it approved by you
+    c = db.insert("clips", {"id": db.new_id("c"), "job_id": "jt", "streamer_id": None, "title": "tg clip",
+                            "hook": "", "start": 0, "end": 10, "score": 50, "why": "", "file": "/nope.mp4",
+                            "thumb": "", "captions": {}, "guard": {"verdict": "review"}, "verdict": "review",
+                            "state": "new", "created": time.time()})
+    assert telegram._buttons(c)["inline_keyboard"][0][0]["callback_data"] == f"ap:{c['id']}"
+    telegram._handle({"update_id": 5, "callback_query": {"id": "q", "data": f"ap:{c['id']}",
+                                                         "message": {"chat": {"id": 42}, "message_id": 7}}})
+    got = db.get("clips", c["id"])
+    assert got["state"] == "approved" and got["guard"]["approved_by_you"]
+    # blocked clips have no Approve button
+    assert [b["text"] for b in telegram._buttons({**c, "id": "x", "verdict": "block", "state": "new"})["inline_keyboard"][0]] == ["❌ Reject"]
+    # repeated events are sent once
+    sent = []
+    monkeypatch.setattr(telegram, "say", lambda text, *a, **k: sent.append(text))
+    monkeypatch.setattr(telegram.threading, "Thread", lambda target, args=(), daemon=None, **k: type("T", (), {"start": lambda self: target(*args)})())
+    telegram.on_event("Posting to youtube failed: x", "error")
+    telegram.on_event("Posting to youtube failed: x", "error")
+    assert len(sent) == 1
+    db.kv_set("telegram", {})

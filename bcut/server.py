@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import ai, config, db, guard, live, media, pipeline, publish, radar, tools, transcribe, winsys
+from . import ai, config, db, guard, live, media, pipeline, publish, radar, telegram, tools, transcribe, winsys
 from .guard import music, rules
 from .publish import platforms
 
@@ -575,6 +575,29 @@ def install_tool(name: str):
     return tools.install(name)
 
 
+@app.get("/api/telegram")
+def telegram_state():
+    return telegram.public()
+
+
+@app.post("/api/telegram")
+def telegram_save(b: dict = Depends(_body)):
+    try:
+        if b.get("unpair"):
+            return telegram.unpair()
+        return telegram.set_token(str(b.get("token", "")))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Telegram didn't accept that token: {str(e)[:200]}")
+
+
+@app.post("/api/telegram/test")
+def telegram_test():
+    if not telegram.public()["paired"]:
+        raise HTTPException(400, "Pair your Telegram first")
+    telegram.say("👋 Test from Byditors Cut. Alerts are working.")
+    return {"ok": True}
+
+
 @app.post("/api/restart")
 def restart_app():
     """Restart to load updates. start.bat/start.sh bring the app straight back (any exit code but 0 and 3)."""
@@ -627,3 +650,4 @@ def start_background() -> None:
     pipeline.start()
     publish.start()
     radar.start()
+    telegram.start()

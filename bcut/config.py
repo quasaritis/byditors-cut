@@ -110,6 +110,7 @@ TIKTOK_REDIRECT_URI = _get("TIKTOK_REDIRECT_URI")
 
 # testing hook: skip network-bound background loops
 NO_BACKGROUND = _bool("BCUT_NO_BACKGROUND", False)
+TELEGRAM_TOKEN = _get("BCUT_TELEGRAM_TOKEN")    # phone alerts + remote control (see bcut/telegram.py)
 
 
 def ensure_dirs() -> None:

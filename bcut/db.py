@@ -175,10 +175,24 @@ def delete(table: str, rid: str) -> None:
         conn().execute(f"DELETE FROM {table} WHERE id=?", (rid,))
 
 
+_hooks: list = []
+
+
+def add_hook(fn) -> None:
+    """fn(text, level) is called for every event (used for phone alerts)."""
+    if fn not in _hooks:
+        _hooks.append(fn)
+
+
 def log(text: str, level: str = "info", streamer_id: str | None = None) -> None:
     with _lock:
         conn().execute("INSERT INTO events (at, level, streamer_id, text) VALUES (?,?,?,?)",
                        (time.time(), level, streamer_id, text[:500]))
+    for fn in list(_hooks):
+        try:
+            fn(text, level)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def kv_get(k: str, default=None):

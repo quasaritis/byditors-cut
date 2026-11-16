@@ -90,6 +90,12 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
             from . import publish
             publish.enqueue(saved["id"], direct)
     log(f"clip ready: {clip['title'] or cid} → {report['verdict'].upper()} ({plan.get('mode')})")
+    try:
+        from . import telegram
+
+        telegram.clip_ready(db.get("clips", saved["id"]) or saved)
+    except Exception:  # noqa: BLE001
+        pass
     return saved
 
 

@@ -46,6 +46,7 @@ def main() -> None:
         sys.exit("ffmpeg isn't installed (or not on PATH). Install it first: https://ffmpeg.org/download.html")
     config.ensure_dirs()
     db.conn()
+    db.kv_set("started_at", time.time())
     start_background()
     threading.Thread(target=_awake_loop, daemon=True, name="awake").start()
     print(f"\n  {config.APP_NAME} is running → {url}\n  Data folder: {config.DATA}\n"

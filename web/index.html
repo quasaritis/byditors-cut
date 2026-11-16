@@ -577,6 +577,8 @@ async function viewSettings() {
       <div class="wide acts"><button class="btn primary">Save and test</button></div></form></div></div>
   <div class="sect"><div><h2>This PC</h2><p>Byditors Cut only works while this PC is on. These keep it running.</p></div>
     <div class="panel" id="pcpanel"><p class="muted" style="margin:0">Loading…</p></div></div>
+  <div class="sect"><div><h2>Phone alerts</h2><p>Your own Telegram bot sends you every new clip as a video with Approve and Reject buttons, plus lives, uploads and problems. Commands: /status, /today, /review, /restart.</p></div>
+    <div class="panel" id="tgpanel"><p class="muted" style="margin:0">Loading…</p></div></div>
   <div class="sect"><div><h2>Add-ons</h2><p>Each one is optional and makes clips or checks better. Installs run inside the app&rsquo;s own folder and switch on as soon as they finish, with no restart.</p></div>
     <div class="panel">${tool("Speech to text (captions, Hindi/Hinglish too)", t.whisper, "Adds captions and lets the AI read what's said. Download: about 200 MB.", installBtn("whisper"))}
       ${tool("Music removal, voice kept", t.demucs, "Strips background songs from a clip and keeps the talking. Download: about 1-2 GB (includes PyTorch), one time.", installBtn("demucs"))}
@@ -601,6 +603,18 @@ async function viewSettings() {
       + `<p class="hint" style="margin-top:12px">If it ever stops by itself, it restarts within 5 seconds. Problems are written to data\\logs\\crash.log.</p>`;
     $("#pcpanel").querySelectorAll("[data-pc]").forEach(i => i.onchange = () => api("/api/settings/pc", {method: "POST", body: {[i.dataset.pc]: i.checked}}).then(() => toast("Saved")).catch(e => { i.checked = !i.checked; toast(e.message, true); }));
   }).catch(() => {});
+  const tgDraw = tg => {
+    const el = $("#tgpanel"); if (!el) return;
+    if (!tg.configured) el.innerHTML = `<form id="f-tg" class="fgrid"><div class="wide"><label class="f" for="tg-t">Bot token</label><input class="field" id="tg-t" name="token" type="password" autocomplete="off" placeholder="From @BotFather in Telegram → /newbot"></div><div class="wide acts"><button class="btn primary">Connect bot</button></div></form>`;
+    else if (!tg.paired) el.innerHTML = `<p style="margin:0 0 8px">Open <a href="https://t.me/${esc(tg.bot)}" target="_blank" rel="noopener">@${esc(tg.bot)}</a> in Telegram and send:</p><p style="font:600 22px/1.2 ui-monospace,monospace;margin:0 0 12px;user-select:all">/start ${esc(tg.code)}</p><p class="hint">Only the chat that sends this code can use the bot.</p><div class="acts"><button class="btn" id="tg-chk">I sent it</button><button class="btn" id="tg-off">Remove bot</button></div>`;
+    else el.innerHTML = `<p style="margin:0 0 12px">Connected to ${tg.owner ? "@" + esc(tg.owner) : "your Telegram"} through @${esc(tg.bot)}.</p><div class="acts"><button class="btn" id="tg-test">Send a test</button><button class="btn" id="tg-unpair">Disconnect</button></div>`;
+    $("#f-tg")?.addEventListener("submit", e => { e.preventDefault(); act(e.submitter, async () => tgDraw(await api("/api/telegram", {method: "POST", body: {token: $("#tg-t").value.trim()}})), "Bot connected"); });
+    $("#tg-chk")?.addEventListener("click", e => act(e.currentTarget, async () => { const t = await api("/api/telegram"); tgDraw(t); if (!t.paired) throw new Error("Not yet. Send the code to the bot, then try again."); }, "Telegram connected"));
+    $("#tg-off")?.addEventListener("click", e => act(e.currentTarget, async () => tgDraw(await api("/api/telegram", {method: "POST", body: {token: ""}})), "Bot removed"));
+    $("#tg-test")?.addEventListener("click", e => act(e.currentTarget, () => api("/api/telegram/test", {method: "POST"}), "Sent. Check Telegram."));
+    $("#tg-unpair")?.addEventListener("click", e => act(e.currentTarget, async () => tgDraw(await api("/api/telegram", {method: "POST", body: {unpair: true}})), "Disconnected"));
+  };
+  api("/api/telegram").then(tgDraw).catch(() => {});
   $("#f-pol").onsubmit = e => { e.preventDefault(); act(e.submitter, () => api("/api/settings/guard", {method: "POST", body: Object.fromEntries(new FormData(e.target))}), "Guard rules saved"); };
   const keyHint = () => { const p = $("#ai-p").value, url = d.ai.key_pages[p];
     $("#ai-keyhint").innerHTML = p === "gemini" ? `Free key, no card: <a href="${url}" target="_blank" rel="noopener">aistudio.google.com/apikey</a>` : p === "ollama" ? "Runs on this PC, no key needed." : url ? `Get one at <a href="${url}" target="_blank" rel="noopener">${url.replace("https://","")}</a>` : "";
