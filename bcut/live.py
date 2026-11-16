@@ -20,12 +20,27 @@ from . import brain, config, db, media, pipeline, signals, transcribe
 
 _sessions: dict[str, "Session"] = {}
 _lock = threading.Lock()
+_backoff: dict[str, float] = {}      # streamer id -> don't auto-start again before this time
+BACKOFF_SEC = 15 * 60
 KICK_PUSHER_KEY = "32cbd69e4b950bf97679"
 
 
 def active() -> list["Session"]:
     with _lock:
         return [s for s in _sessions.values() if s.running]
+
+
+def backing_off(streamer_id: str) -> bool:
+    """True for a while after a live recording couldn't open the stream, so the radar doesn't retry every check."""
+    return _backoff.get(streamer_id, 0) > time.time()
+
+
+def stream_page(url: str) -> str:
+    """A channel page (youtube.com/@name, tiktok.com/@name) isn't a stream; its /live page is."""
+    if media.platform_of(url) in ("youtube", "tiktok") and not re.search(
+            r"/(watch|live)\b|youtu\.be/|/shorts/|/video/", url):
+        return url.rstrip("/") + "/live"
+    return url
 
 
 def active_for(streamer_id: str) -> "Session | None":
@@ -45,10 +60,12 @@ def resolve(url: str) -> tuple[str, dict, dict]:
     import yt_dlp
 
     with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "format": "best[height<=1080]/best",
-                           "socket_timeout": 20}) as y:
-        info = y.extract_info(url, download=False)
+                           "socket_timeout": 20, "noplaylist": True}) as y:
+        info = y.extract_info(stream_page(url), download=False)
+    if info.get("_type") == "playlist" or not info.get("url"):
+        raise RuntimeError("That link is a channel page, not a live stream")
     if not info.get("is_live", True) and info.get("live_status") not in (None, "is_live"):
-        raise RuntimeError("Not live")
+        raise RuntimeError("Not live right now")
     return info["url"], info.get("http_headers") or {}, info
 
 
@@ -75,6 +92,8 @@ class Session:
         self.proc: subprocess.Popen | None = None
         self.local = Path(url).exists() or url.startswith("file://")
         self.workers: list[threading.Thread] = []
+        self.last_error = ""
+        self.got_video = False
 
     # ------------------------------------------------------------ recording
     def start(self):
@@ -93,7 +112,8 @@ class Session:
                 src, headers, info = resolve(self.url)
                 self.title = info.get("title") or self.title
                 misses = 0
-            except Exception:  # noqa: BLE001
+            except Exception as e:  # noqa: BLE001
+                self.last_error = str(e).splitlines()[0][:200]
                 misses += 1
                 if misses >= 3:
                     break
@@ -131,6 +151,7 @@ class Session:
         with lst.open() as f:
             for row in csv.reader(f):
                 if len(row) >= 3 and row[0] not in known:
+                    self.got_video = True
                     self.segs.append({"file": row[0], "t0": offset + float(row[1]), "t1": offset + float(row[2]),
                                       "read": False})
 
@@ -306,6 +327,15 @@ class Session:
         time.sleep(6)  # let the analyser read the last pieces
         for th in list(self.workers):
             th.join(timeout=900)
+        if not self.got_video and not self.clips and not self.local:
+            sid = (self.streamer or {}).get("id")
+            if sid:
+                _backoff[sid] = time.time() + BACKOFF_SEC
+            why = self.last_error or "the stream gave no video"
+            db.update("jobs", self.job["id"], status="failed", step="Couldn't record", error=why, progress=1.0)
+            db.log(f"Couldn't record {(self.streamer or {}).get('name', 'the stream')}: {why}. "
+                   f"Trying again in {BACKOFF_SEC // 60} min.", "warn", sid)
+            return
         db.update("jobs", self.job["id"], status="stopped", step=f"Stream ended — {self.clips} clips",
                   progress=1.0)
 

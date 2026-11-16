@@ -318,3 +318,24 @@ def test_retry_a_failed_job(client):
                            "created": 0, "updated": 0})
     r = client.post(f"/api/jobs/{j['id']}/retry")
     assert r.status_code == 200 and r.json()["status"] == "queued" and r.json()["error"] == ""
+
+
+def test_live_channel_page_becomes_stream_page():
+    from bcut import live
+    assert live.stream_page("https://www.youtube.com/@theRachitroo") == "https://www.youtube.com/@theRachitroo/live"
+    assert live.stream_page("https://www.youtube.com/@x/live") == "https://www.youtube.com/@x/live"
+    assert live.stream_page("https://www.youtube.com/watch?v=abc") == "https://www.youtube.com/watch?v=abc"
+    assert live.stream_page("https://kick.com/xqc") == "https://kick.com/xqc"
+
+
+def test_live_failure_backs_off(monkeypatch):
+    from bcut import live
+    monkeypatch.setattr(live, "resolve", lambda url: (_ for _ in ()).throw(RuntimeError("Not live right now")))
+    monkeypatch.setattr(live.time, "sleep", lambda s: None)
+    s = live.Session({"id": "sX", "name": "t"}, "https://www.youtube.com/@t/live")
+    s.running = True
+    s._record()
+    from bcut import db
+    j = db.get("jobs", s.job["id"])
+    assert j["status"] == "failed" and "Not live" in j["error"]
+    assert live.backing_off("sX")

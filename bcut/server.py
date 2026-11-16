@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import secrets
 import shutil
+import os
+import threading
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -571,6 +573,16 @@ def install_tool(name: str):
     if name not in tools.PACKAGES:
         raise HTTPException(404, "Unknown add-on")
     return tools.install(name)
+
+
+@app.post("/api/restart")
+def restart_app():
+    """Restart to load updates. start.bat/start.sh bring the app straight back (any exit code but 0 and 3)."""
+    def bye():
+        time.sleep(1)
+        os._exit(75)
+    threading.Thread(target=bye, daemon=True).start()
+    return {"restarting": True}
 
 
 @app.get("/api/settings/pc")

@@ -103,12 +103,7 @@ def is_live(url: str) -> bool:
                 return bool(r.json().get("data"))
             except Exception:  # noqa: BLE001
                 pass
-    target = url
-    if plat == "youtube":
-        target = url.rstrip("/") + "/live"
-    elif plat == "tiktok":
-        target = url.rstrip("/") + "/live"
-    info = _ydl(target)
+    info = _ydl(live.stream_page(url))
     return bool(info and (info.get("is_live") or info.get("live_status") == "is_live"))
 
 
@@ -154,10 +149,10 @@ def check(streamer: dict) -> dict:
         if not url:
             continue
         url = channel_url(plat, url)
-        if streamer.get("auto_live") and not live.active_for(streamer["id"]):
+        if streamer.get("auto_live") and not live.active_for(streamer["id"]) and not live.backing_off(streamer["id"]):
             try:
                 if is_live(url):
-                    live.start(streamer, url)
+                    live.start(streamer, live.stream_page(url))
                     status[f"{plat}_live"] = time.time()
                     db.log(f"{streamer['name']} went live on {plat.title()} — recording + clipping", streamer_id=streamer["id"])
             except Exception as e:  # noqa: BLE001
