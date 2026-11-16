@@ -1,7 +1,10 @@
 @echo off
 setlocal
-title Byditors Cut
+title Byditors Cut (keep this window open)
 cd /d "%~dp0"
+rem --background: started by Windows at sign-in (no browser tab). Any other start opens the dashboard.
+set "BG="
+if /i "%~1"=="--background" set "BG=--background"
 echo.
 echo   Byditors Cut
 echo   ------------
@@ -49,12 +52,22 @@ copy /y requirements.txt ".venv\installed.ok" >nul
 :run
 if not exist .env copy .env.example .env >nul
 echo.
-echo   Starting... your browser opens at http://127.0.0.1:8777
-echo   Keep this window open while you use it. Close it to stop.
+echo   Starting... the dashboard is at http://127.0.0.1:8777
+echo   Keep this window open (minimise it). Close it to stop Byditors Cut.
 echo.
-".venv\Scripts\python.exe" -m bcut
-pause
-exit /b 0
+set "FIRST=%BG%"
+:again
+".venv\Scripts\python.exe" -m bcut %FIRST%
+set "CODE=%ERRORLEVEL%"
+if "%CODE%"=="0" exit /b 0
+if "%CODE%"=="3" exit /b 0
+rem It stopped by itself: start it again. After a restart don't open another browser tab.
+echo.
+echo   Byditors Cut stopped unexpectedly (code %CODE%). Restarting in 5 seconds...
+echo   Details: data\logs\crash.log
+set "FIRST=--no-browser"
+timeout /t 5 /nobreak >nul
+goto again
 
 :no_winget
 echo.

@@ -17,6 +17,13 @@ _q: queue.Queue = queue.Queue()
 _started = False
 
 
+def retry_job(jid: str) -> dict:
+    job = db.get("jobs", jid)
+    db.update("jobs", jid, status="queued", step="Waiting", error="", progress=0)
+    _q.put(jid)
+    return db.get("jobs", jid) or job
+
+
 def create_job(kind: str, url: str = "", file: str = "", streamer_id: str | None = None, title: str = "",
                meta: dict | None = None) -> dict:
     now = time.time()
@@ -76,9 +83,12 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     clip["verdict"] = report["verdict"]
     saved = db.insert("clips", clip)
     if streamer and streamer.get("auto_post") and report["auto_post_allowed"]:
-        from . import publish
-        publish.enqueue(saved["id"], streamer.get("post_to") or [])
-        db.update("clips", saved["id"], state="queued")
+        # accounts with a daily target are filled by the autopilot instead (spread out, best clips first)
+        direct = [a for a in (streamer.get("post_to") or [])
+                  if not int(((db.get("accounts", a) or {}).get("settings") or {}).get("daily_target") or 0)]
+        if direct:
+            from . import publish
+            publish.enqueue(saved["id"], direct)
     log(f"clip ready: {clip['title'] or cid} → {report['verdict'].upper()} ({plan.get('mode')})")
     return saved
 
@@ -101,10 +111,16 @@ def run_job(jid: str) -> None:
         if job["meta"].get("file"):
             src = Path(job["meta"]["file"])
             info = {"title": job["title"], "uploaded_by_you": True, "webpage_url": ""}
+        elif job["meta"].get("source") and Path(job["meta"]["source"]).exists() and job["meta"].get("info"):
+            src, info = Path(job["meta"]["source"]), dict(job["meta"]["info"])   # retry: already downloaded
         else:
             step("Downloading", 0.05)
             src, info = media.download(job["url"], work, log=lambda m: step(m))
-            db.update("jobs", jid, title=info.get("title") or job["title"])
+            db.update("jobs", jid, title=info.get("title") or job["title"],
+                      meta={**job["meta"], "source": str(src), "info": info})
+            job = db.get("jobs", jid)
+        if job["meta"].get("rights"):
+            info["rights"] = job["meta"]["rights"]           # what you said about this link when you pasted it
         pr = media.probe(src)
         info["duration"] = info.get("duration") or pr["duration"]
         step("Listening for the big moments", 0.2)
@@ -112,8 +128,15 @@ def run_job(jid: str) -> None:
         sig = signals.from_file(src, pr["duration"]) if pr["has_audio"] else \
             signals.combined(__import__("numpy").zeros(0, dtype="float32"), cuts)
         step("Transcribing", 0.3)
-        tr = transcribe.transcribe_long(src, pr["duration"], (streamer or {}).get("language", ""),
-                                        log=lambda m: step(m)) if pr["has_audio"] else {"words": [], "language": ""}
+        tr = {"words": [], "language": ""}
+        if pr["has_audio"]:
+            try:
+                tr = transcribe.transcribe_long(src, pr["duration"], (streamer or {}).get("language", ""),
+                                                log=lambda m: step(m))
+            except Exception as e:  # noqa: BLE001
+                # Captions are a bonus: without them clips are still cut from sound, picture and chat.
+                db.log(f"Speech to text failed, clipping without captions: {str(e)[:200]}", "warn",
+                       job.get("streamer_id"))
         step("Picking clips", 0.55)
         picks = brain.find_clips(tr["words"], sig, pr["duration"], info.get("title", ""),
                                  (streamer or {}).get("name") or info.get("uploader", ""), log=lambda m: step(m))

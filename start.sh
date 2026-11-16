@@ -20,4 +20,10 @@ if ! cmp -s requirements.txt .venv/installed.ok; then   # first run, or an updat
   cp requirements.txt .venv/installed.ok
 fi
 [ -f .env ] || cp .env.example .env
-exec .venv/bin/python -m bcut "$@"
+args=("$@")
+while true; do
+  set +e; .venv/bin/python -m bcut "${args[@]}"; code=$?; set -e
+  [ "$code" = 0 ] || [ "$code" = 3 ] || [ "$code" = 130 ] && exit 0
+  echo "Byditors Cut stopped unexpectedly (code $code). Restarting in 5 seconds... (details: data/logs/crash.log)"
+  args=(--no-browser); sleep 5
+done

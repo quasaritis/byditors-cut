@@ -24,7 +24,8 @@ def _load_dotenv() -> None:
         if v[:1] in ('"', "'") and v[0] in v[1:]:
             v = v[1:v.index(v[0], 1)]          # quoted value: keep everything inside the quotes, # included
         else:
-            v = re.split(r"\s+#", v, maxsplit=1)[0].strip()   # unquoted: drop an inline "  # comment"
+            # unquoted: drop an inline "  # comment" (and a value that is only a comment means empty)
+            v = "" if v.startswith("#") else re.split(r"\s+#", v, maxsplit=1)[0].strip()
         os.environ.setdefault(k.strip(), v)
 
 

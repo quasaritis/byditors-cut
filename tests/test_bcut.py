@@ -243,14 +243,16 @@ def test_env_inline_comments_are_ignored(tmp_path, monkeypatch):
     from bcut import config
     env = config.ROOT / ".env"
     had = env.read_text() if env.exists() else None
-    env.write_text('BCUT_TEST_A=small            # tiny / base / small\nBCUT_TEST_B="x # y"\nBCUT_TEST_C=01-07  # hours\n')
-    for k in ("BCUT_TEST_A", "BCUT_TEST_B", "BCUT_TEST_C"):
+    env.write_text('BCUT_TEST_A=small            # tiny / base / small\nBCUT_TEST_B="x # y"\nBCUT_TEST_C=01-07  # hours\n'
+                   'BCUT_TEST_D=              # empty = detect\n')
+    for k in ("BCUT_TEST_A", "BCUT_TEST_B", "BCUT_TEST_C", "BCUT_TEST_D"):
         monkeypatch.delenv(k, raising=False)
     try:
         config._load_dotenv()
         assert os.environ["BCUT_TEST_A"] == "small"
         assert os.environ["BCUT_TEST_B"] == "x # y"
         assert os.environ["BCUT_TEST_C"] == "01-07"
+        assert os.environ["BCUT_TEST_D"] == ""
     finally:
         if had is None:
             env.unlink()
@@ -274,3 +276,45 @@ def test_hook_is_a_whole_sentence_not_cut_off():
             t += 0.35
     hook = brain.pick_hook(ws, 0, t)
     assert hook == "Would you jump?" and "…" not in hook
+
+
+# ---------------------------------------------------------------- autopilot + pasted-link rights
+
+def test_pasted_link_marked_mine_can_auto_post():
+    clip = {"start": 0, "end": 30, "hook": "x", "captions": {}}
+    mine = guard.review(clip, None, {"duration": 900, "rights": "own"}, "what a play", ["youtube"],
+                        music_report={"share": 0, "ranges": [], "song": None})
+    other = guard.review(clip, None, {"duration": 900, "rights": "unknown"}, "what a play", ["youtube"],
+                         music_report={"share": 0, "ranges": [], "song": None})
+    assert mine["auto_post_allowed"] and not other["auto_post_allowed"]
+
+
+def test_autopilot_fills_daily_target_with_best_ready_clips():
+    from datetime import datetime, timedelta
+    now = datetime.combine(datetime.now().date(), datetime.min.time()).timestamp() + 8 * 3600  # 08:00 today
+    acc = db.insert("accounts", {"id": db.new_id("a"), "platform": "youtube", "name": "Test channel",
+                                 "secrets": {}, "settings": {"daily_target": 3}, "created": now})
+    ready = {"auto_post_allowed": True, "checks": []}
+    ids = []
+    for i, (verdict, g) in enumerate([("pass", ready), ("pass", ready), ("review", {}), ("pass", ready),
+                                      ("pass", ready), ("pass", ready), ("pass", ready), ("pass", ready)]):
+        c = db.insert("clips", {"id": db.new_id("c"), "job_id": "jt", "streamer_id": None, "title": f"c{i}",
+                                "start": 0, "end": 30, "score": 90 - i, "guard": g, "verdict": verdict,
+                                "state": "new", "created": now})
+        ids.append(c["id"])
+    made = publish.autopilot_tick(now)
+    assert len(made) == 6                                   # 3 today + 3 tomorrow
+    dues = sorted(p["due"] for p in made)
+    days = {datetime.fromtimestamp(d).date() for d in dues}
+    assert len(days) == 2 and all(9 <= datetime.fromtimestamp(d).hour <= 23 for d in dues)
+    assert ids[2] not in {p["clip_id"] for p in made}        # a clip waiting for review is never auto-posted
+    assert publish.autopilot_tick(now) == []                 # already full: nothing more
+    db.delete("accounts", acc["id"])
+
+
+def test_retry_a_failed_job(client):
+    j = db.insert("jobs", {"id": db.new_id("j"), "kind": "video", "url": "https://example.com/v", "title": "t",
+                           "streamer_id": None, "status": "failed", "step": "x", "error": "boom", "meta": {},
+                           "created": 0, "updated": 0})
+    r = client.post(f"/api/jobs/{j['id']}/retry")
+    assert r.status_code == 200 and r.json()["status"] == "queued" and r.json()["error"] == ""

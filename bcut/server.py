@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import ai, config, db, guard, live, media, pipeline, publish, radar, tools, transcribe
+from . import ai, config, db, guard, live, media, pipeline, publish, radar, tools, transcribe, winsys
 from .guard import music, rules
 from .publish import platforms
 
@@ -151,13 +151,14 @@ async def new_job(request: Request):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "Paste a full link that starts with https://")
     sid = b.get("streamer_id") or None
+    rights = b.get("rights") if b.get("rights") in ("own", "permission", "unknown") else "unknown"
     if not sid:  # tie the link to a streamer you already added, so their rights + credit apply
         for s in db.query("SELECT * FROM streamers"):
             if any(radar.handle(u).lower().lstrip("@") == radar.handle(url).lower().lstrip("@")
                    and media.platform_of(u) == media.platform_of(url) for u in (s["channels"] or {}).values()):
                 sid = s["id"]
                 break
-    return pipeline.create_job("video", url=url, streamer_id=sid)
+    return pipeline.create_job("video", url=url, streamer_id=sid, meta={"rights": rights})
 
 
 @app.post("/api/upload")
@@ -175,6 +176,14 @@ async def upload(file: UploadFile = File(...)):
 @app.get("/api/jobs")
 def jobs():
     return db.query("SELECT * FROM jobs ORDER BY created DESC LIMIT 100")
+
+
+@app.post("/api/jobs/{jid}/retry")
+def retry_job(jid: str):
+    j = _need("jobs", jid)
+    if j["status"] in ("working", "queued", "recording") or j["kind"] == "live":
+        raise HTTPException(409, "It's already running")
+    return pipeline.retry_job(jid)
 
 
 @app.delete("/api/jobs/{jid}")
@@ -478,9 +487,9 @@ async def edit_account(aid: str, request: Request):
     a = _need("accounts", aid)
     b = await _body(request)
     st = dict(a["settings"] or {})
-    for k in ("gap_min", "daily_cap"):
+    for k in ("gap_min", "daily_cap", "daily_target"):
         if k in b:
-            st[k] = max(0, int(b[k]))
+            st[k] = max(0, min(50, int(b[k] or 0)))
     if "privacy" in b:
         st["privacy"] = str(b["privacy"])[:40]
     return _acc_public(db.update("accounts", aid, settings=st))
@@ -504,6 +513,11 @@ def posts():
         out.append({**p, "clip_title": c.get("title", ""), "platform": a.get("platform", ""),
                     "account": a.get("name", "")})
     return out
+
+
+@app.post("/api/autopilot/run")
+def autopilot_now():
+    return {"scheduled": len(publish.autopilot_tick())}
 
 
 @app.post("/api/posts/{pid}/{action}")
@@ -569,6 +583,25 @@ def install_tool(name: str):
     if name not in tools.PACKAGES:
         raise HTTPException(404, "Unknown add-on")
     return tools.install(name)
+
+
+@app.get("/api/settings/pc")
+def pc_settings():
+    return {"windows": winsys.IS_WINDOWS, "autostart": winsys.autostart_enabled(),
+            "keep_awake": db.kv_get("keep_awake", True) is not False}
+
+
+@app.post("/api/settings/pc")
+async def save_pc_settings(request: Request):
+    b = await _body(request)
+    if "keep_awake" in b:
+        db.kv_set("keep_awake", bool(b["keep_awake"]))
+    if "autostart" in b:
+        try:
+            winsys.set_autostart(bool(b["autostart"]))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(400, f"Couldn't change start-with-Windows: {str(e)[:200]}")
+    return pc_settings()
 
 
 @app.post("/api/settings/keys")

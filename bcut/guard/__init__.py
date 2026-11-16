@@ -41,6 +41,10 @@ def rights_check(streamer: dict | None, source: dict) -> dict:
     if not streamer:
         if source.get("uploaded_by_you"):
             return _check("rights", "Rights", "ok", "You uploaded this file yourself.")
+        if source.get("rights") == "own":
+            return _check("rights", "Rights", "ok", "You said this video is yours.")
+        if source.get("rights") == "permission":
+            return _check("rights", "Rights", "ok", "You said you have permission to clip this video.")
         return _check("rights", "Rights", "review",
                       "This link isn't tied to a streamer you have permission for.",
                       "Add the creator under Streamers and record your permission, or only clip your own videos.")
@@ -145,7 +149,8 @@ def review(clip: dict, streamer: dict | None, source: dict, words_text: str, tar
 
     rc = rights_check(streamer, source)
     checks.append(rc)
-    rights = (streamer or {}).get("rights", "own" if source.get("uploaded_by_you") else "unknown")
+    rights = (streamer or {}).get("rights") or ("own" if source.get("uploaded_by_you") else
+                                               source.get("rights") if source.get("rights") in RIGHTS else "unknown")
 
     if music_report is None and clip.get("file") and Path(clip["file"]).exists():
         music_report = music.analyse(Path(clip["file"]))

@@ -106,11 +106,82 @@ def post_one(p: dict) -> None:
             db.log(f"Posting to {acc['platform']} failed: {msg[:200]}", "error", clip.get("streamer_id"))
 
 
+# ---------------------------------------------------------------- autopilot: N posts a day per account
+
+def day_slots(day, target: int) -> list[float]:
+    """`target` posting times spread evenly over the waking part of `day` (after quiet hours, before 23:00)."""
+    start_h = 9
+    if config.QUIET_HOURS and "-" in config.QUIET_HOURS:
+        try:
+            start_h = max(6, int(config.QUIET_HOURS.split("-")[1]) + 2)
+        except ValueError:
+            pass
+    end_h = 23
+    span = (end_h - start_h) * 3600
+    base = datetime.combine(day, datetime.min.time()).timestamp() + start_h * 3600
+    return [base + span * (i + 0.5) / target for i in range(target)]
+
+
+def eligible(clip: dict) -> bool:
+    """May autopilot post this clip without asking? Only clips the Guard passed with permission on record, or
+    clips you approved yourself."""
+    g = clip.get("guard") or {}
+    if clip["state"] not in ("new", "approved", "queued"):
+        return False
+    if g.get("approved_by_you"):
+        return allowed(clip)[0]
+    if clip["verdict"] != "pass" or not g.get("auto_post_allowed"):
+        return False
+    if clip.get("streamer_id"):
+        s = db.get("streamers", clip["streamer_id"])
+        return bool(s and s.get("auto_post"))
+    return True  # a link you pasted and said is yours / permitted
+
+
+def autopilot_tick(now: float | None = None) -> list[dict]:
+    now = now or time.time()
+    made = []
+    for acc in db.query("SELECT * FROM accounts"):
+        target = int((acc.get("settings") or {}).get("daily_target") or 0)
+        if target <= 0:
+            continue
+        taken = [p["due"] for p in db.query(
+            "SELECT due FROM posts WHERE account_id=? AND status IN ('scheduled','posting','posted') AND due > ?",
+            (acc["id"], now - 86400 * 2))]
+        done = {p["clip_id"] for p in db.query(
+            "SELECT clip_id FROM posts WHERE account_id=? AND status != 'cancelled'", (acc["id"],))}
+        pool = [c for c in db.query(
+            "SELECT * FROM clips WHERE created > ? ORDER BY score DESC LIMIT 300", (now - 14 * 86400,))
+            if c["id"] not in done and eligible(c)]
+        today = datetime.fromtimestamp(now).date()
+        for day in (today, today + timedelta(days=1)):
+            on_day = [t for t in taken if datetime.fromtimestamp(t).date() == day]
+            for slot in day_slots(day, target):
+                if not pool or len(on_day) >= target:
+                    break
+                if slot < now + 120 or any(abs(t - slot) < 30 * 60 for t in taken):
+                    continue
+                clip = pool.pop(0)
+                made += enqueue(clip["id"], [acc["id"]], at=slot)
+                taken.append(slot)
+                on_day.append(slot)
+    if made:
+        db.log(f"Autopilot scheduled {len(made)} post{'s' if len(made) != 1 else ''}")
+    return made
+
+
 def _loop():
+    last_auto = 0.0
     while True:
-        for p in db.query("SELECT * FROM posts WHERE status='scheduled' AND due <= ? ORDER BY due LIMIT 5",
-                          (time.time(),)):
-            post_one(p)
+        try:
+            for p in db.query("SELECT * FROM posts WHERE status='scheduled' AND due <= ? ORDER BY due LIMIT 5",
+                              (time.time(),)):
+                post_one(p)
+            if time.time() - last_auto > 300:
+                last_auto = time.time()
+                autopilot_tick()
+        except Exception as e:  # noqa: BLE001  never let the poster thread die
+            db.log(f"Posting loop error: {str(e)[:200]}", "error")
         time.sleep(20)
 
 

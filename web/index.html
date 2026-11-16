@@ -247,6 +247,7 @@ tr.click:hover td{background:#151515}
   <div class="top">
     <form class="clipbar" id="clipform">
       <input id="clipurl" type="url" aria-label="Video or stream link to clip" placeholder="Paste a YouTube, Kick, Twitch or TikTok link to clip" required>
+      <select class="field" id="cliprights" aria-label="Whose video is this?" style="width:auto;height:var(--ctl);border-radius:999px" title="Clips of videos that are yours, or that you have permission for, can be posted automatically"><option value="unknown">Clip only</option><option value="own">It's my video</option><option value="permission">I have permission</option></select>
       <button class="btn primary" type="submit">Make clips</button>
       <label class="btn ghost" for="upfile" tabindex="0">Upload</label>
       <input id="upfile" type="file" accept="video/*" hidden>
@@ -354,7 +355,7 @@ async function viewToday(poll = false) {
   const jobs = st.jobs.length ? `<ul class="rows">${st.jobs.map(j => `<li><div class="grow"><span class="t">${esc(j.title || j.url)}</span>
       <small>${j.status === "failed" ? `<span style="color:#ff9aa0">${esc(j.error.slice(0,120))}</span>` : esc(j.step)}</small>
       ${j.status === "working" || j.status === "queued" ? `<div class="bar"><i style="transform:scaleX(${j.progress || 0.02})"></i></div>` : ""}</div>
-      <span class="pill ${j.status === "done" ? "ok" : j.status === "failed" ? "failed" : ""}">${{done: "Done", failed: "Failed", working: "Working", queued: "Waiting"}[j.status] || j.status}</span></li>`).join("")}</ul>`
+      ${j.status === "failed" ? `<button class="btn sm" data-retry="${j.id}">Try again</button><button class="btn ghost sm" data-dropjob="${j.id}" aria-label="Remove this job">Remove</button>` : `<span class="pill ${j.status === "done" ? "ok" : ""}">${{done: "Done", working: "Working", queued: "Waiting"}[j.status] || j.status}</span>`}</li>`).join("")}</ul>`
     : `<div class="empty"><b>No videos yet</b>Paste a link in the bar at the top.</div>`;
   const evs = st.events.length ? `<ul class="rows">${st.events.map(e => `<li class="ev ${e.level}"><time>${ago(e.at)}</time><span class="grow">${esc(e.text)}</span></li>`).join("")}</ul>` : `<div class="empty">Nothing has happened yet.</div>`;
   const html = `
@@ -380,6 +381,8 @@ async function viewToday(poll = false) {
   main.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => act(b, () => api(`/api/live/${b.dataset.clip}/clip`, {method: "POST", body: {seconds: 45}}), "Cutting the last 45 seconds…"));
   main.querySelectorAll("[data-stop]").forEach(b => b.onclick = () => act(b, () => api(`/api/live/${b.dataset.stop}/stop`, {method: "POST"}), "Recording stopped"));
   const m = $("#mclip"); if (m) m.onsubmit = e => { e.preventDefault(); submitLink(m.querySelector("input").value); };
+  main.querySelectorAll("[data-retry]").forEach(b => b.onclick = () => act(b, async () => { await api(`/api/jobs/${b.dataset.retry}/retry`, {method: "POST"}); viewToday(); }, "Trying again"));
+  main.querySelectorAll("[data-dropjob]").forEach(b => b.onclick = () => act(b, async () => { await api(`/api/jobs/${b.dataset.dropjob}`, {method: "DELETE"}); viewToday(); }, "Removed"));
 }
 
 /* ---------------- Inbox ---------------- */
@@ -531,7 +534,7 @@ async function viewQueue() {
 async function viewAccounts() {
   const [d] = await Promise.all([api("/api/accounts"), loadState()]);
   const L = d.limits;
-  const mine = p => d.accounts.filter(a => a.platform === p).map(a => `<div class="swrow"><div><b>${esc(a.name)}</b><p>Every <input class="field num" style="width:64px;height:30px;display:inline-block" type="number" min="0" value="${a.settings.gap_min ?? ""}" placeholder="90" data-gap="${a.id}" aria-label="Minutes between posts"> min, at most <input class="field num" style="width:56px;height:30px;display:inline-block" type="number" min="0" value="${a.settings.daily_cap ?? ""}" placeholder="6" data-cap="${a.id}" aria-label="Posts per day"> a day</p></div><button class="btn ghost sm" data-del="${a.id}">Disconnect</button></div>`).join("");
+  const mine = p => d.accounts.filter(a => a.platform === p).map(a => `<div class="swrow"><div><b>${esc(a.name)}</b><p>Every <input class="field num" style="width:64px;height:30px;display:inline-block" type="number" min="0" value="${a.settings.gap_min ?? ""}" placeholder="90" data-gap="${a.id}" aria-label="Minutes between posts"> min, at most <input class="field num" style="width:56px;height:30px;display:inline-block" type="number" min="0" value="${a.settings.daily_cap ?? ""}" placeholder="6" data-cap="${a.id}" aria-label="Posts per day"> a day</p><p style="margin-top:8px"><b style="color:var(--text)">Autopilot:</b> upload <input class="field num" style="width:56px;height:30px;display:inline-block" type="number" min="0" max="50" value="${a.settings.daily_target ?? ""}" placeholder="0" data-target="${a.id}" aria-label="Clips to upload automatically each day"> of the best ready clips a day, spread out. 0 = off.</p></div><button class="btn ghost sm" data-del="${a.id}">Disconnect</button></div>`).join("");
   const lim = p => `${L[p].label}: ${L[p].min_sec}–${L[p].max_sec} s, up to ${L[p].max_mb} MB.`;
   main.innerHTML = `<div class="titlerow"><div><h1>Accounts</h1><p class="sub">Posting goes through each platform's official API. No passwords are stored, only tokens, on this PC.</p></div></div>
   <div class="sect"><div><h2>Instagram Reels</h2><p>Needs a Professional (Creator or Business) account. ${lim("instagram")} See docs/CONNECT_ACCOUNTS.md for the two-minute token setup.</p></div>
@@ -546,7 +549,8 @@ async function viewAccounts() {
   post("#f-ig", "/api/accounts/instagram", "Instagram connected"); post("#f-fb", "/api/accounts/facebook", "Facebook Page connected"); post("#f-tt", "/api/accounts/tiktok", "TikTok connected");
   if ($("#tt-open")) $("#tt-open").onclick = async () => { try { const r = await api("/api/accounts/tiktok/start"); window.open(r.url, "_blank", "noopener"); } catch (e) { toast(e.message, true); } };
   main.querySelectorAll("[data-del]").forEach(b => b.onclick = () => act(b, async () => { await api(`/api/accounts/${b.dataset.del}`, {method: "DELETE"}); viewAccounts(); }, "Disconnected"));
-  main.querySelectorAll("[data-gap],[data-cap]").forEach(i => i.onchange = () => api(`/api/accounts/${i.dataset.gap || i.dataset.cap}`, {method: "PATCH", body: {[i.dataset.gap ? "gap_min" : "daily_cap"]: +i.value}}).then(() => toast("Saved")).catch(e => toast(e.message, true)));
+  main.querySelectorAll("[data-gap],[data-cap],[data-target]").forEach(i => i.onchange = () => { const id = i.dataset.gap || i.dataset.cap || i.dataset.target, key = i.dataset.gap ? "gap_min" : i.dataset.cap ? "daily_cap" : "daily_target";
+    api(`/api/accounts/${id}`, {method: "PATCH", body: {[key]: +i.value}}).then(async () => { if (key === "daily_target" && +i.value) { const r = await api("/api/autopilot/run", {method: "POST"}); toast(r.scheduled ? `Saved. ${r.scheduled} upload${r.scheduled === 1 ? "" : "s"} scheduled.` : "Saved. Uploads get scheduled as soon as clips are ready."); } else toast("Saved"); }).catch(e => toast(e.message, true)); });
 }
 
 /* ---------------- Settings ---------------- */
@@ -571,6 +575,8 @@ async function viewSettings() {
       <div class="wide"><label class="f" for="ai-m">Model</label><div style="display:flex;gap:8px"><input class="field" id="ai-m" name="model" list="ai-list" value="${esc(d.ai.model)}" placeholder="Press Find models, or type a model id"><datalist id="ai-list"></datalist><button type="button" class="btn" id="ai-find">Find models</button></div><p class="hint">Fast, cheap models are listed first. That's the right kind for picking clips.</p></div>
       <div class="wide"><label class="f" for="ai-b">Address (custom service only)</label><input class="field" id="ai-b" name="base_url" value="${esc(d.ai.base_url)}" placeholder="https://…/v1"></div>
       <div class="wide acts"><button class="btn primary">Save and test</button></div></form></div></div>
+  <div class="sect"><div><h2>This PC</h2><p>Byditors Cut only works while this PC is on. These keep it running.</p></div>
+    <div class="panel" id="pcpanel"><p class="muted" style="margin:0">Loading…</p></div></div>
   <div class="sect"><div><h2>Add-ons</h2><p>Each one is optional and makes clips or checks better. Installs run inside the app&rsquo;s own folder and switch on as soon as they finish, with no restart.</p></div>
     <div class="panel">${tool("Speech to text (captions, Hindi/Hinglish too)", t.whisper, "Adds captions and lets the AI read what's said. Download: about 200 MB.", installBtn("whisper"))}
       ${tool("Music removal, voice kept", t.demucs, "Strips background songs from a clip and keeps the talking. Download: about 1-2 GB (includes PyTorch), one time.", installBtn("demucs"))}
@@ -588,6 +594,13 @@ async function viewSettings() {
   main.querySelectorAll(".keyform").forEach(f => f.onsubmit = e => { e.preventDefault(); const v = f.v.value.trim(); if (!v) return toast("Paste the key first", true);
     act(f.querySelector("button"), async () => { await api("/api/settings/keys", {method: "POST", body: {[f.dataset.key]: v}}); await loadState(); viewSettings(); }, "Key saved"); });
   main.querySelectorAll("[data-clear]").forEach(b => b.onclick = () => act(b, async () => { await api("/api/settings/keys", {method: "POST", body: {[b.dataset.clear]: ""}}); await loadState(); viewSettings(); }, "Key removed"));
+  api("/api/settings/pc").then(pc => {
+    const row = (k, title, text, on, dis) => `<div class="swrow"><div><b>${title}</b><p>${text}</p></div><span class="tog"><input type="checkbox" data-pc="${k}" aria-label="${title}" ${on ? "checked" : ""} ${dis ? "disabled" : ""}><span></span></span></div>`;
+    $("#pcpanel").innerHTML = row("autostart", "Start with Windows", pc.windows ? "Opens Byditors Cut in the background when you sign in to Windows, so lives are caught even if you forget." : "Windows only.", pc.autostart, !pc.windows)
+      + row("keep_awake", "Keep the PC awake while watching streamers", "Stops Windows going to sleep while you have streamers to watch. The screen can still turn off.", pc.keep_awake, !pc.windows)
+      + `<p class="hint" style="margin-top:12px">If it ever stops by itself, it restarts within 5 seconds. Problems are written to data\\logs\\crash.log.</p>`;
+    $("#pcpanel").querySelectorAll("[data-pc]").forEach(i => i.onchange = () => api("/api/settings/pc", {method: "POST", body: {[i.dataset.pc]: i.checked}}).then(() => toast("Saved")).catch(e => { i.checked = !i.checked; toast(e.message, true); }));
+  }).catch(() => {});
   $("#f-pol").onsubmit = e => { e.preventDefault(); act(e.submitter, () => api("/api/settings/guard", {method: "POST", body: Object.fromEntries(new FormData(e.target))}), "Guard rules saved"); };
   const keyHint = () => { const p = $("#ai-p").value, url = d.ai.key_pages[p];
     $("#ai-keyhint").innerHTML = p === "gemini" ? `Free key, no card: <a href="${url}" target="_blank" rel="noopener">aistudio.google.com/apikey</a>` : p === "ollama" ? "Runs on this PC, no key needed." : url ? `Get one at <a href="${url}" target="_blank" rel="noopener">${url.replace("https://","")}</a>` : "";
@@ -606,7 +619,7 @@ const VIEWS = {today: viewToday, inbox: viewInbox, streamers: viewStreamers, que
 
 /* ---------------- top bar: clip a link / upload ---------------- */
 async function submitLink(url) {
-  try { await api("/api/jobs", {method: "POST", body: {url}}); toast("Added. It shows under Working on."); $("#clipurl").value = ""; if (S.view === "today") viewToday(); else location.hash = "#today"; }
+  try { await api("/api/jobs", {method: "POST", body: {url, rights: $("#cliprights")?.value || "unknown"}}); toast("Added. It shows under Working on."); $("#clipurl").value = ""; if (S.view === "today") viewToday(); else location.hash = "#today"; }
   catch (e) { toast(e.message, true); }
 }
 $("#clipform").onsubmit = e => { e.preventDefault(); submitLink($("#clipurl").value.trim()); };

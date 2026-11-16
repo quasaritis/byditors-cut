@@ -20,21 +20,39 @@ def available() -> bool:
     return tools.installed("whisper")
 
 
-def _load():
-    global _model
+_on_cpu = False  # set once the graphics card has failed us, so we never try it again this run
+
+
+def _load(force_cpu: bool = False):
+    """Load the speech model on the graphics card if one works, else on the processor.
+    Older cards (GTX 10xx) can't do float16 and Windows PCs often lack the CUDA libraries, so every GPU option is
+    tried and the CPU is always the fallback. A failure here must never stop a clip job."""
+    global _model, _on_cpu
     with _lock:
+        if force_cpu and not _on_cpu:
+            _model, _on_cpu = None, True
         if _model is None:
             from faster_whisper import WhisperModel
 
-            device = config.WHISPER_DEVICE
+            device = "cpu" if _on_cpu else config.WHISPER_DEVICE
             if device == "auto":
                 try:
                     import ctranslate2
                     device = "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
                 except Exception:  # noqa: BLE001
                     device = "cpu"
-            compute = "float16" if device == "cuda" else "int8"
-            _model = WhisperModel(config.WHISPER_MODEL, device=device, compute_type=compute)
+            tries = [("cuda", "float16"), ("cuda", "int8_float32"), ("cpu", "int8")] if device == "cuda" \
+                else [("cpu", "int8")]
+            err = None
+            for dev, compute in tries:
+                try:
+                    _model = WhisperModel(config.WHISPER_MODEL or "small", device=dev, compute_type=compute)
+                    _on_cpu = dev == "cpu"
+                    break
+                except Exception as e:  # noqa: BLE001
+                    err = e
+            if _model is None:
+                raise RuntimeError(f"Couldn't load the speech model: {err}")
         return _model
 
 
@@ -50,18 +68,26 @@ def transcribe(path: Path, start: float = 0.0, duration: float | None = None, la
     audio = read_audio(path, start, duration)
     if len(audio) == 0:
         return {"language": "", "words": []}
-    model = _load()
-    segments, info = model.transcribe(
-        audio, language=(language or config.WHISPER_LANGUAGE or None), word_timestamps=True,
-        vad_filter=True, vad_parameters={"min_silence_duration_ms": 400}, beam_size=1,
-    )
-    words = []
-    for seg in segments:
-        for w in seg.words or []:
-            text = (w.word or "").strip()
-            if text:
-                words.append({"w": text, "s": round(w.start + start, 3), "e": round(w.end + start, 3)})
-    return {"language": info.language or "", "words": words}
+    for attempt in (0, 1):
+        try:
+            model = _load(force_cpu=attempt == 1)
+            segments, info = model.transcribe(
+                audio, language=(language or config.WHISPER_LANGUAGE or None), word_timestamps=True,
+                vad_filter=True, vad_parameters={"min_silence_duration_ms": 400}, beam_size=1,
+            )
+            words = []
+            for seg in segments:
+                for w in seg.words or []:
+                    text = (w.word or "").strip()
+                    if text:
+                        words.append({"w": text, "s": round(w.start + start, 3), "e": round(w.end + start, 3)})
+            return {"language": info.language or "", "words": words}
+        except Exception as e:  # noqa: BLE001
+            if attempt == 0 and not _on_cpu:
+                log(f"Graphics card speech failed ({str(e)[:80]}), switching to the processor")
+                continue
+            raise
+    return {"language": "", "words": []}
 
 
 def lines(words: list[dict], max_gap: float = 0.8, max_len: float = 7.0) -> list[dict]:
