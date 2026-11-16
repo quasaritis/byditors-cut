@@ -27,6 +27,7 @@ python -m bcut                     # add --no-browser to skip opening a tab
 
 - **AI for picking clips (a free Gemini key works).** Dashboard → Guard & settings → AI: choose Google Gemini, paste a key from https://aistudio.google.com/apikey, press **Find models**, then **Save and test**. Or set `BCUT_AI_PROVIDER`, `BCUT_AI_KEY` and `BCUT_AI_MODEL` in `.env`.
 - **Posting to Instagram, YouTube, TikTok and Facebook:** follow `docs/CONNECT_ACCOUNTS.md`.
+- **Phone alerts (Telegram):** follow `docs/PHONE_ALERTS.md`.
 - **Music removal:** `pip install demucs`. **Song ID:** `AUDD_API_TOKEN` in `.env`.
 - **NVIDIA GPU:** nothing to do; speech to text uses it automatically.
 
@@ -53,6 +54,7 @@ The tests need ffmpeg but no keys or internet. They take about a minute.
 | `bcut/reframe.py`, `bcut/render.py` | 9:16 layouts (face, split, blur) and the ffmpeg render |
 | `bcut/guard/` | Rights & Safety Guard: rights, music, guideline lexicon, platform rules |
 | `bcut/publish/` | Post queue and the Instagram, YouTube, TikTok and Facebook publishers |
+| `bcut/telegram.py` | Phone alerts and remote control through the person's own Telegram bot |
 | `bcut/server.py`, `web/index.html` | Local API and the dashboard (plain HTML/CSS/JS, no build step) |
 
 ## 5. Rules when changing code

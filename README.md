@@ -102,6 +102,12 @@ Read [docs/COMPLIANCE.md](docs/COMPLIANCE.md) for what it can and can't promise.
 
 Posting uses each platform's **official API**: no passwords, no browser automation, nothing that gets accounts flagged. Setup takes a few minutes per platform: [docs/CONNECT_ACCOUNTS.md](docs/CONNECT_ACCOUNTS.md).
 
+### Alerts on your phone
+
+Connect your own Telegram bot and every new clip arrives on your phone as a video with **Approve** and **Reject**
+buttons, plus messages when a streamer goes live, a video posts or something fails. `/status`, `/today`, `/review` and
+`/restart` work from anywhere. Two-minute setup: [docs/PHONE_ALERTS.md](docs/PHONE_ALERTS.md).
+
 ## Project map
 
 | Path | What it is |
