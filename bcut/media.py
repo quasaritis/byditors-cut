@@ -82,7 +82,10 @@ def download(url: str, out_dir: Path, log=print) -> tuple[Path, dict]:
 
     opts = {
         "outtmpl": str(out_dir / "source.%(ext)s"),
-        "format": "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
+        # H.264 + AAC first: every tool (and OpenCV's face tracking) can read it. YouTube's default is often AV1,
+        # which many PCs can't decode without a GPU.
+        "format": ("bv*[vcodec^=avc1][height<=1080]+ba[acodec^=mp4a]/bv*[vcodec^=avc1][height<=1080]+ba/"
+                   "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b"),
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
@@ -131,19 +134,25 @@ def frame_at(path: Path, t: float, out: Path, width: int = 640) -> Path:
 
 
 def frames(path: Path, times: list[float], width: int = 480) -> list[tuple[float, np.ndarray]]:
-    """Grab small BGR frames at the given times (for face tracking). Skips any that fail."""
-    import cv2
-
-    cap = cv2.VideoCapture(str(path))
+    """Small BGR frames at evenly spaced `times` (for face tracking), decoded by ffmpeg in one pass.
+    ffmpeg reads every codec yt-dlp can hand us (AV1 and VP9 included); OpenCV's own reader often can't."""
+    if not times:
+        return []
+    start = max(0.0, times[0])
+    step = (times[-1] - times[0]) / (len(times) - 1) if len(times) > 1 else 1.0
+    step = max(step, 0.05)
+    info = probe(path)
+    if not info["width"]:
+        return []
+    h = int(round(info["height"] * width / info["width"] / 2) * 2)
+    cmd = [need("ffmpeg"), "-v", "error", "-ss", f"{start:.3f}", "-t", f"{step * len(times) + 0.05:.3f}",
+           "-i", str(path), "-an", "-vf", f"fps=1/{step:.4f},scale={width}:{h}", "-frames:v", str(len(times)),
+           "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+    p = subprocess.run(cmd, capture_output=True)
+    size = width * h * 3
+    raw = p.stdout
     got = []
-    for t in times:
-        cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
-        ok, img = cap.read()
-        if not ok:
-            continue
-        h, w = img.shape[:2]
-        if w > width:
-            img = cv2.resize(img, (width, int(h * width / w)))
-        got.append((t, img))
-    cap.release()
+    for i in range(len(raw) // size):
+        img = np.frombuffer(raw[i * size:(i + 1) * size], dtype=np.uint8).reshape(h, width, 3).copy()
+        got.append((start + i * step, img))
     return got

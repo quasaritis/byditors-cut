@@ -231,5 +231,46 @@ def test_install_button_runs_pip_in_the_apps_python(client, monkeypatch):
             break
         time.sleep(0.05)
     assert tools.status()["demucs"]["state"] == "done"
-    assert calls[0][:4] == [sys.executable, "-m", "pip", "install"] and "demucs>=4.0" in calls[0]
+    assert calls[0][:4] == [sys.executable, "-m", "pip", "install"] and "demucs>=4.1" in calls[0]
     assert client.post("/api/tools/rm-rf/install").status_code == 404
+
+
+# ---------------------------------------------------------------- regressions from real use
+
+def test_env_inline_comments_are_ignored(tmp_path, monkeypatch):
+    """A .env line like `BCUT_WHISPER_MODEL=small   # tiny / base ...` must give "small" (it crashed transcription)."""
+    import importlib
+    from bcut import config
+    env = config.ROOT / ".env"
+    had = env.read_text() if env.exists() else None
+    env.write_text('BCUT_TEST_A=small            # tiny / base / small\nBCUT_TEST_B="x # y"\nBCUT_TEST_C=01-07  # hours\n')
+    for k in ("BCUT_TEST_A", "BCUT_TEST_B", "BCUT_TEST_C"):
+        monkeypatch.delenv(k, raising=False)
+    try:
+        config._load_dotenv()
+        assert os.environ["BCUT_TEST_A"] == "small"
+        assert os.environ["BCUT_TEST_B"] == "x # y"
+        assert os.environ["BCUT_TEST_C"] == "01-07"
+    finally:
+        if had is None:
+            env.unlink()
+        else:
+            env.write_text(had)
+
+
+def test_frames_decode_without_opencv_codecs(video):
+    """Face tracking frames come from ffmpeg, so AV1/VP9 downloads work too."""
+    from bcut import media
+    got = media.frames(video, [10.0, 10.5, 11.0, 11.5])
+    assert len(got) == 4 and got[0][1].shape[1] == 480 and abs(got[-1][0] - 11.5) < 0.01
+
+
+def test_hook_is_a_whole_sentence_not_cut_off():
+    from bcut import brain
+    ws, t = [], 0.0
+    for sent in ["World Ancient Temple.", "But we are so high up right now and honestly it is terrifying.", "Would you jump?"]:
+        for w in sent.split():
+            ws.append({"w": w, "s": t, "e": t + 0.3})
+            t += 0.35
+    hook = brain.pick_hook(ws, 0, t)
+    assert hook == "Would you jump?" and "…" not in hook

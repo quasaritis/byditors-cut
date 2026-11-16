@@ -5,6 +5,7 @@ Nothing here is secret by default. Keys and tokens live in `.env` or in the data
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,7 +20,12 @@ def _load_dotenv() -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        v = v.strip()
+        if v[:1] in ('"', "'") and v[0] in v[1:]:
+            v = v[1:v.index(v[0], 1)]          # quoted value: keep everything inside the quotes, # included
+        else:
+            v = re.split(r"\s+#", v, maxsplit=1)[0].strip()   # unquoted: drop an inline "  # comment"
+        os.environ.setdefault(k.strip(), v)
 
 
 _load_dotenv()

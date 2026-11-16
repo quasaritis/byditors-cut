@@ -50,6 +50,39 @@ def _hook_from(text: str) -> str:
     return " ".join(words[:8]).strip(" ,.") + ("…" if len(words) > 8 else "")
 
 
+def _sentences(words: list[dict]) -> list[dict]:
+    """Whole sentences (split on . ? !) with their start time."""
+    out, cur = [], []
+    for w in words:
+        cur.append(w)
+        if w["w"].rstrip("\"')”’").endswith((".", "?", "!", "।")):
+            out.append({"s": cur[0]["s"], "text": " ".join(x["w"] for x in cur).strip()})
+            cur = []
+    if cur:
+        out.append({"s": cur[0]["s"], "text": " ".join(x["w"] for x in cur).strip(), "open": True})
+    return out
+
+
+def pick_hook(words: list[dict], s: float, e: float) -> str:
+    """A complete, short, punchy sentence from the clip for the on-screen hook (no AI needed).
+    Questions and exclamations win, earlier beats later; nothing cut off with "…". Empty if nothing fits."""
+    best, best_score = "", 0.0
+    for sent in _sentences(transcribe.words_between(words, s, e)):
+        n = len(sent["text"].split())
+        if sent.get("open") or not 3 <= n <= 9:
+            continue
+        txt = sent["text"]
+        score = 1.0
+        score += 1.5 if txt.endswith("?") else (1.2 if txt.endswith("!") else 0)
+        score += 0.6 if any(k in txt.lower() for k in ("never", "can't", "won't", "no way", "why", "how", "what",
+                                                       "secret", "first", "last", "only", "biggest", "worst")) else 0
+        score -= 1.2 * (sent["s"] - s) / max(1.0, e - s)       # earlier is better: it has to hook in 2 seconds
+        score -= 0.08 * abs(n - 6)
+        if score > best_score:
+            best, best_score = txt, score
+    return best
+
+
 def by_signals(sig: dict, words: list[dict], duration: float, n: int, min_len: int, max_len: int,
                focus: float | None = None) -> list[dict]:
     lines = transcribe.lines(words)
@@ -65,9 +98,10 @@ def by_signals(sig: dict, words: list[dict], duration: float, n: int, min_len: i
         s, e = _snap(p - 0.65 * target, p + 0.35 * target, lines, duration, min_len, max_len)
         text = " ".join(w["w"] for w in transcribe.words_between(words, s, e))
         score = signals.mean_between(sig["excite"], s, e)
+        hook = pick_hook(words, s, e)
         out.append({"start": s, "end": e, "score": round(min(99, 40 + 60 * score), 1),
-                    "hook": _hook_from(text) if text else "Wait for it…",
-                    "title": _hook_from(text) if text else "This moment",
+                    "hook": hook,
+                    "title": hook or (_hook_from(text) if text else "This moment"),
                     "why": "Loudest, most chaotic stretch of the video" + (" with a chat spike" if
                                                                           sig["chat_z"].any() else ""),
                     "flags": []})

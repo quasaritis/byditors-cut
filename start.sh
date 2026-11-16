@@ -12,12 +12,12 @@ if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
   elif command -v apt-get >/dev/null; then echo "Installing ffmpeg..."; sudo apt-get install -y ffmpeg
   else echo "Install ffmpeg first: https://ffmpeg.org/download.html"; exit 1; fi
 fi
-if [ ! -f .venv/installed.ok ]; then
+if ! cmp -s requirements.txt .venv/installed.ok; then   # first run, or an update changed the packages
   echo "Setting up Byditors Cut (one time, a few minutes)..."
   [ -x .venv/bin/python ] || python3 -m venv .venv
   .venv/bin/python -m pip install --upgrade pip --quiet
   .venv/bin/python -m pip install -r requirements.txt
-  touch .venv/installed.ok
+  cp requirements.txt .venv/installed.ok
 fi
 [ -f .env ] || cp .env.example .env
 exec .venv/bin/python -m bcut "$@"

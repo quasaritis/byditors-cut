@@ -36,14 +36,15 @@ where ffmpeg >nul 2>&1 || goto ffmpeg_failed
 :have_ffmpeg
 
 rem ---------- 3. The app's own environment ----------
-if exist ".venv\installed.ok" goto run
+rem Reinstall when requirements.txt changed since the last setup (an update can add packages).
+if exist ".venv\installed.ok" fc /b requirements.txt ".venv\installed.ok" >nul 2>&1 && goto run
 echo   Setting up Byditors Cut (one time, a few minutes)...
 if exist ".venv\Scripts\python.exe" goto venv_ready
 if defined PYEXE ("%PYEXE%" -m venv .venv || goto setup_failed) else (%PY% -m venv .venv || goto setup_failed)
 :venv_ready
 ".venv\Scripts\python.exe" -m pip install --upgrade pip --quiet
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto setup_failed
-echo ok> ".venv\installed.ok"
+copy /y requirements.txt ".venv\installed.ok" >nul
 
 :run
 if not exist .env copy .env.example .env >nul

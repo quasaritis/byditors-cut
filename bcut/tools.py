@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 import subprocess
 import sys
 import threading
@@ -14,11 +15,11 @@ import time
 
 from . import config, db
 
-# what the button installs. demucs is pinned to a torchaudio that can still write .wav without extra codecs.
+# what the button installs. demucs 4.1+ reads and writes audio itself, so it doesn't need torchaudio.
 PACKAGES = {
     "whisper": {"label": "Speech to text", "module": "faster_whisper", "pip": ["faster-whisper>=1.1"],
                 "size": "about 200 MB"},
-    "demucs": {"label": "Music removal", "module": "demucs", "pip": ["demucs>=4.0", "torch<2.9", "torchaudio<2.9"],
+    "demucs": {"label": "Music removal", "module": "demucs", "pip": ["demucs>=4.1", "torch"],
                "size": "about 1-2 GB (it includes PyTorch)"},
 }
 KEYS = {"audd": "AUDD_TOKEN", "moderation": "OPENAI_MODERATION_KEY"}
@@ -49,20 +50,36 @@ def install(name: str) -> dict:
         _jobs[name] = {"state": "installing", "started": time.time(), "log": "Starting…"}
 
     def run():
-        cmd = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", *PACKAGES[name]["pip"]]
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        cmd = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-input",
+               "--progress-bar", "off", *PACKAGES[name]["pip"]]
+        # UTF-8 everywhere: on Windows a pipe defaults to the old code page and pip's output can crash it.
+        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+        logfile = config.DATA / "logs" / f"install-{name}.log"
+        logfile.parent.mkdir(parents=True, exist_ok=True)
         tail: list[str] = []
-        for line in p.stdout:
-            line = line.strip()
-            if line:
-                tail = (tail + [line])[-6:]
-                with _lock:
-                    _jobs[name]["log"] = line[:200]
-        ok = p.wait() == 0 and installed(name)
+        code = -1
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                                 encoding="utf-8", errors="replace")
+            with logfile.open("w", encoding="utf-8") as lf:
+                lf.write(" ".join(cmd) + "\n\n")
+                for line in p.stdout:
+                    lf.write(line)
+                    line = line.strip()
+                    if line:
+                        tail = (tail + [line])[-6:]
+                        with _lock:
+                            _jobs[name]["log"] = line[:200]
+            code = p.wait()
+        except Exception as e:  # noqa: BLE001
+            tail.append(f"{type(e).__name__}: {e}")
+        ok = code == 0 and installed(name)
+        reason = next((t for t in reversed(tail) if "error" in t.lower()), " | ".join(tail[-2:]))
         with _lock:
             _jobs[name] = {"state": "done" if ok else "failed", "finished": time.time(),
-                           "log": "Installed." if ok else " | ".join(tail)[-400:]}
-        db.log(f"{PACKAGES[name]['label']} {'installed' if ok else 'install failed'}", "info" if ok else "error")
+                           "log": "Installed." if ok else f"{reason[:300]} (full log: {logfile})"}
+        db.log(f"{PACKAGES[name]['label']} {'installed' if ok else 'install failed: ' + reason[:200]}",
+               "info" if ok else "error")
 
     threading.Thread(target=run, daemon=True, name=f"install-{name}").start()
     return status()[name]
