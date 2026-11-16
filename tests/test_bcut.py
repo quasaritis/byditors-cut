@@ -423,3 +423,12 @@ def test_hindi_titles_fall_back_to_something_readable():
     assert not transcribe.readable("तब लिए दी जा जीजे तब")
     assert transcribe.readable("kya bhai, yeh dekho!")
     assert brain._fallback_title("🌴BREAKUP HOGYA 🌴 IRL", "rachitro") == "rachitro: BREAKUP HOGYA IRL"
+
+
+def test_hindi_words_become_hinglish_offline():
+    from bcut.transcribe import _hinglish, hinglish_word
+    got = " ".join(hinglish_word(w) for w in "क्या भाई नहीं यार ठीक है बहुत प्यार अच्छा था।".split())
+    assert got == "kya bhai nahin yaar theek hai bahut pyaar accha tha."
+    assert hinglish_word("hello") == "hello"
+    ws = _hinglish([{"w": "क्या", "s": 1.0, "e": 1.2}, {"w": "bro", "s": 1.2, "e": 1.4}])
+    assert [w["w"] for w in ws] == ["kya", "bro"] and ws[0]["s"] == 1.0

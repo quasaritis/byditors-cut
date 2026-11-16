@@ -4,6 +4,7 @@ Exit codes the start scripts understand: 0 = stopped on purpose, 3 = already run
 anything else = crashed (start.bat restarts it after a few seconds).
 """
 import shutil
+from pathlib import Path
 import socket
 import sys
 import threading
@@ -34,6 +35,30 @@ def _awake_loop() -> None:
         time.sleep(60)
 
 
+def _sync_requirements() -> None:
+    """After an update, install any new packages in the background. start.bat only does this on a fresh start,
+    and the app also restarts itself (crash restarts, /restart from Telegram), so it checks here too."""
+    import subprocess
+
+    root = Path(__file__).resolve().parent.parent
+    req, stamp = root / "requirements.txt", root / ".venv" / "installed.ok"
+    if not req.exists() or not stamp.parent.exists():
+        return
+    try:
+        if stamp.exists() and stamp.read_bytes() == req.read_bytes():
+            return
+        r = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-input", "-r", str(req)],
+                           capture_output=True, text=True, timeout=1800,
+                           creationflags=0x08000000 if sys.platform == "win32" else 0)
+        if r.returncode == 0:
+            shutil.copyfile(req, stamp)
+            db.log("Installed the packages this update needs")
+        else:
+            db.log(f"Couldn't install this update's packages: {(r.stderr or r.stdout)[-200:]}", "warn")
+    except Exception as e:  # noqa: BLE001
+        db.log(f"Couldn't install this update's packages: {str(e)[:200]}", "warn")
+
+
 def main() -> None:
     url = f"http://{config.HOST}:{config.PORT}"
     background = "--background" in sys.argv
@@ -48,6 +73,7 @@ def main() -> None:
     db.conn()
     db.kv_set("started_at", time.time())
     start_background()
+    threading.Thread(target=_sync_requirements, daemon=True, name="requirements").start()
     threading.Thread(target=_awake_loop, daemon=True, name="awake").start()
     print(f"\n  {config.APP_NAME} is running → {url}\n  Data folder: {config.DATA}\n"
           f"  Keep this window open (you can minimise it). Close it to stop.\n")

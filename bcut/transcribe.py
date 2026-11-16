@@ -100,23 +100,48 @@ def transcribe(path: Path, start: float = 0.0, duration: float | None = None, la
 NON_LATIN = re.compile(r"[\u0900-\u097F\u0600-\u06FF]")
 
 
-def _hinglish(words: list[dict], log=print) -> list[dict]:
-    """Devanagari/Urdu words → Roman Hinglish through the AI, when it's set up. Timings stay the same."""
-    idx = [i for i, w in enumerate(words) if NON_LATIN.search(w["w"])]
-    if not idx:
-        return words
+def hinglish_word(w: str) -> str:
+    """One Hindi word in Devanagari → Hinglish the way people type it (क्या → kya, यार → yaar, नहीं → nahin).
+    Offline and instant: no AI, no rate limits. Words without Devanagari come back unchanged."""
+    if not NON_LATIN.search(w):
+        return w
     try:
-        from . import ai
+        from indic_transliteration import sanscript
+        from indic_transliteration.sanscript import transliterate
+    except ImportError:
+        return w
+    punct = "\"'“”‘’.,!?;:()[]-—…।॥"
+    core = w.strip(punct)
+    lead = w[:len(w) - len(w.lstrip(punct))]
+    tail = w[len(w.rstrip(punct)):]
+    x = transliterate(core, sanscript.DEVANAGARI, sanscript.ITRANS)
+    for a, b in (("j~n", "gy"), ("GY", "gy"), ("chCh", "cch"), ("Ch", "chh"), (".N", "n"), ("~N", "n"), ("~n", "n"),
+                 (".a", ""), ("R^i", "ri"), ("x", "ksh"), ("z2", "z"), ("H", "h"), ("Sh", "sh"), ("shh", "sh")):
+        x = x.replace(a, b)
+    x = re.sub(r"M\b", "n", x).replace("M", "n")
+    # the inherent "a" isn't said at the end of a word: यार yAra → yAr, बहुत bahuta → bahut
+    if len(x) > 2 and x.endswith("a") and not x.endswith(("aa", "ia", "ua")) and x[-2] not in "aeiouAIU":
+        x = x[:-1]
+    short = len(re.sub(r"[^aeiouAIU]", "", x)) <= 1          # one vowel: yaar, pyaar, theek
+    if short:
+        x = re.sub(r"A(?=[^aeiouAIU])", "aa", x)
+        x = re.sub(r"I(?=[^aeiouAIU])", "ee", x)
+        x = re.sub(r"U(?=[^aeiouAIU])", "oo", x)
+    x = x.replace("A", "a").replace("I", "i").replace("U", "u").lower()
+    x = x.replace("chh", "chh").replace("|", ".")
+    return lead + x + tail.replace("।", ".").replace("॥", ".")
 
-        rom = ai.romanize([words[i]["w"] for i in idx])
-    except Exception as e:  # noqa: BLE001
-        log(f"Hinglish captions skipped: {str(e)[:120]}")
+
+def _hinglish(words: list[dict], log=print) -> list[dict]:
+    """Devanagari words → Roman Hinglish, offline. Timings stay the same."""
+    if not any(NON_LATIN.search(w["w"]) for w in words):
         return words
-    if not rom:
-        return words
-    out = [dict(w) for w in words]
-    for i, r in zip(idx, rom):
-        out[i]["w"] = r
+    out = []
+    for w in words:
+        try:
+            out.append({**w, "w": hinglish_word(w["w"])})
+        except Exception:  # noqa: BLE001
+            out.append(w)
     return out
 
 
