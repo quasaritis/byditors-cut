@@ -5,6 +5,8 @@ and rendered without captions.
 """
 from __future__ import annotations
 
+import re
+
 import threading
 from pathlib import Path
 
@@ -71,9 +73,12 @@ def transcribe(path: Path, start: float = 0.0, duration: float | None = None, la
     for attempt in (0, 1):
         try:
             model = _load(force_cpu=attempt == 1)
+            lang = language or config.WHISPER_LANGUAGE or None
             segments, info = model.transcribe(
-                audio, language=(language or config.WHISPER_LANGUAGE or None), word_timestamps=True,
-                vad_filter=True, vad_parameters={"min_silence_duration_ms": 400}, beam_size=1,
+                audio, language=lang, word_timestamps=True,
+                vad_filter=True, vad_parameters={"min_silence_duration_ms": 400},
+                # Hindi/Urdu need a wider search: greedy decoding turns Hinglish into nonsense
+                beam_size=5 if lang in ("hi", "ur") else 1,
             )
             words = []
             for seg in segments:
@@ -81,6 +86,8 @@ def transcribe(path: Path, start: float = 0.0, duration: float | None = None, la
                     text = (w.word or "").strip()
                     if text:
                         words.append({"w": text, "s": round(w.start + start, 3), "e": round(w.end + start, 3)})
+            if (info.language or "") in ("hi", "ur") and words:
+                words = _hinglish(words, log)
             return {"language": info.language or "", "words": words}
         except Exception as e:  # noqa: BLE001
             if attempt == 0 and not _on_cpu:
@@ -88,6 +95,35 @@ def transcribe(path: Path, start: float = 0.0, duration: float | None = None, la
                 continue
             raise
     return {"language": "", "words": []}
+
+
+NON_LATIN = re.compile(r"[\u0900-\u097F\u0600-\u06FF]")
+
+
+def _hinglish(words: list[dict], log=print) -> list[dict]:
+    """Devanagari/Urdu words → Roman Hinglish through the AI, when it's set up. Timings stay the same."""
+    idx = [i for i, w in enumerate(words) if NON_LATIN.search(w["w"])]
+    if not idx:
+        return words
+    try:
+        from . import ai
+
+        rom = ai.romanize([words[i]["w"] for i in idx])
+    except Exception as e:  # noqa: BLE001
+        log(f"Hinglish captions skipped: {str(e)[:120]}")
+        return words
+    if not rom:
+        return words
+    out = [dict(w) for w in words]
+    for i, r in zip(idx, rom):
+        out[i]["w"] = r
+    return out
+
+
+def readable(text: str) -> bool:
+    """False when a title is mostly Hindi/Urdu script (unreadable for the Hinglish audience)."""
+    letters = [c for c in text if c.isalpha()]
+    return bool(letters) and sum(1 for c in letters if NON_LATIN.match(c)) / len(letters) < 0.3
 
 
 def lines(words: list[dict], max_gap: float = 0.8, max_len: float = 7.0) -> list[dict]:

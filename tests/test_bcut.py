@@ -395,3 +395,31 @@ def test_google_client_pasted_in_app():
     loc = c.get("/oauth/youtube/start", follow_redirects=False).headers["location"]
     assert "client_id=1-abc.apps.googleusercontent.com" in loc
     c.post("/api/settings/google", json={"id": ""})
+
+
+def test_many_accounts_per_platform_and_no_duplicates(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from bcut.publish import platforms
+    from bcut.server import app
+    c = TestClient(app, base_url="http://127.0.0.1:8777")
+    for a in db.query("SELECT id FROM accounts WHERE platform='instagram'"):
+        db.delete("accounts", a["id"])
+    who = {"t1": ("111", "one"), "t2": ("222", "two")}
+    monkeypatch.setattr(platforms, "ig_connect", lambda tok, host="graph.instagram.com": {
+        "name": "@" + who[tok][1], "secrets": {"token": tok, "user_id": who[tok][0], "host": host}})
+    a1 = c.post("/api/accounts/instagram", json={"token": "t1"}).json()
+    a2 = c.post("/api/accounts/instagram", json={"token": "t2"}).json()
+    assert a1["id"] != a2["id"]
+    c.patch(f"/api/accounts/{a1['id']}", json={"daily_target": 3})
+    again = c.post("/api/accounts/instagram", json={"token": "t1"}).json()   # reconnecting the same account
+    assert again["id"] == a1["id"] and again["settings"]["daily_target"] == 3
+    assert len(db.query("SELECT id FROM accounts WHERE platform='instagram'")) == 2
+    assert "select_account" in platforms.yt_auth_url("x")
+
+
+def test_hindi_titles_fall_back_to_something_readable():
+    from bcut import brain, transcribe
+    assert not transcribe.readable("तब लिए दी जा जीजे तब")
+    assert transcribe.readable("kya bhai, yeh dekho!")
+    assert brain._fallback_title("🌴BREAKUP HOGYA 🌴 IRL", "rachitro") == "rachitro: BREAKUP HOGYA IRL"

@@ -125,7 +125,8 @@ def yt_redirect() -> str:
 def yt_auth_url(state: str) -> str:
     q = httpx.QueryParams({"client_id": google_client()[0], "redirect_uri": yt_redirect(),
                            "response_type": "code", "scope": YT_SCOPES, "access_type": "offline",
-                           "prompt": "consent", "state": state})
+                           # select_account: every Connect shows Google's account/channel picker, so more channels can be added
+                           "prompt": "select_account consent", "state": state})
     return f"https://accounts.google.com/o/oauth2/v2/auth?{q}"
 
 

@@ -7,6 +7,8 @@ Two paths:
 """
 from __future__ import annotations
 
+import re
+
 import numpy as np
 
 from . import ai, config, signals, transcribe
@@ -180,6 +182,26 @@ def by_ai(words: list[dict], sig: dict, duration: float, title: str, who: str, n
 def find_clips(words: list[dict], sig: dict, duration: float, title: str = "", who: str = "",
                n: int | None = None, min_len: int | None = None, max_len: int | None = None, log=print,
                focus: float | None = None) -> list[dict]:
+    clips = _find_clips(words, sig, duration, title, who, n, min_len, max_len, log, focus)
+    for c in clips:
+        if not transcribe.readable(c.get("title") or ""):
+            c["title"] = _fallback_title(title, who)
+        if c.get("hook") and not transcribe.readable(c["hook"]):
+            c["hook"] = ""
+    return clips
+
+
+def _fallback_title(source_title: str, who: str) -> str:
+    """When the words can't make a readable title: the stream's or video's own title, tidied."""
+    t = re.sub(r"[^\w\s!?:'&|,.-]+", " ", source_title or "")
+    t = re.sub(r"\s+", " ", t).strip(" -|:")
+    if t and transcribe.readable(t):
+        return (f"{who}: {t}" if who and who.lower() not in t.lower() else t)[:90]
+    return f"{who} live moment" if who else "Best moment"
+
+
+def _find_clips(words: list[dict], sig: dict, duration: float, title: str, who: str,
+                n: int | None, min_len: int | None, max_len: int | None, log, focus: float | None) -> list[dict]:
     n = n or config.CLIPS_PER_VIDEO
     min_len = min_len or config.CLIP_MIN
     max_len = max_len or config.CLIP_MAX

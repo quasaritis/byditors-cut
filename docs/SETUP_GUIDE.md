@@ -9,8 +9,8 @@ says how long it takes and what you need. Only part 1 is required; everything el
 | 2. Your first clips | Clips from any link | 5 min |
 | 3. Free AI (Gemini) | Smarter picks, hooks and captions | 3 min |
 | 4. Captions and music removal | Word-by-word captions, songs stripped | 5 min |
-| 5. Connect YouTube | Shorts upload by themselves | 15 min |
-| 6. Connect Instagram | Reels post by themselves | 15 min |
+| 5. Connect YouTube | Shorts upload by themselves, on as many channels as you like | 15 min |
+| 6. Connect Instagram | Reels post by themselves, on as many accounts as you like | 15 min |
 | 7. Facebook and TikTok | More places to post | 15 min each |
 | 8. Streamers | Lives and new uploads clipped automatically | 2 min each |
 | 9. Daily autopilot | A set number of uploads a day, spread out | 1 min |
@@ -141,7 +141,12 @@ for **"YouTube API Services Audit and Quota Extension Form"**, fill it in for yo
 clips to your own channel), and wait for Google's email. Until then, uploads arrive as private videos. You can still
 make them public by hand in YouTube Studio.
 
-Vertical videos up to 3 minutes count as Shorts. Each project can upload about 100 videos a day.
+**More channels:** press **Add another YouTube channel** in Accounts. Google shows its account picker: pick another
+Google account, or another channel (brand account) on the same one. Each extra Google account must also be added
+as a test user (step 9–11). One Google Cloud project serves all your channels.
+
+Vertical videos up to 3 minutes count as Shorts. Each project can upload about 100 videos a day, shared by all
+your channels.
 
 ---
 
@@ -181,6 +186,9 @@ Vertical videos up to 3 minutes count as Shorts. Each project can upload about 1
 11. Next to your Instagram account press **Generate token**, then copy the long token.
 12. In Byditors Cut: **Accounts → Instagram Reels → Access token**: paste it → **Connect Instagram**.
     Your @username appears.
+
+**More Instagram accounts:** in your Meta app press **Add account** again (step 10) for each Instagram account,
+generate its token, and paste it in **Accounts → Add another Instagram account**. All of them must be Professional.
 
 Tokens last 60 days. Byditors Cut renews them automatically while it runs. If the app is off for more than 60 days,
 generate a new token the same way.
@@ -242,6 +250,7 @@ During a live you can also press **Clip last 45 s** on Today to grab the last 45
 ## 9. Daily autopilot: a set number of uploads a day
 
 In **Accounts**, each connected account has a line: *Autopilot: upload [ ] of the best ready clips a day*.
+With several channels, each one gets its own number, for example 3 a day on one channel and 5 on another.
 
 - Type a number, for example **3**. Every day the app picks the best clips that are allowed to post (Ready to post
   and from your content or with permission, or approved by you) and spreads them through the day. With 3, they go

@@ -408,8 +408,25 @@ def accounts():
             "limits": rules.PLATFORMS}
 
 
+IDENTITY = {"youtube": "channel_id", "instagram": "user_id", "facebook": "page_id", "tiktok": "open_id"}
+
+
 def _save_account(platform: str, res: dict) -> dict:
-    a = db.insert("accounts", {"id": db.new_id("a"), "platform": platform, "name": res["name"],
+    """Any number of accounts per platform. Connecting one that's already here refreshes its login and keeps
+    its schedule and autopilot settings instead of adding a duplicate."""
+    key = IDENTITY.get(platform)
+    ident = (res["secrets"] or {}).get(key) if key else None
+    if ident:
+        for old in db.query("SELECT * FROM accounts WHERE platform=?", (platform,)):
+            if (old.get("secrets") or {}).get(key) == ident:
+                db.update("accounts", old["id"], name=res["name"], secrets=res["secrets"])
+                db.log(f"Reconnected {platform.title()}: {res['name']}")
+                return _acc_public(db.get("accounts", old["id"]))
+    name = res["name"]
+    same = [x["name"] for x in db.query("SELECT name FROM accounts WHERE platform=?", (platform,))]
+    if name in same:  # e.g. Google didn't share the channel name: keep the names apart
+        name = f"{name} {len(same) + 1}"
+    a = db.insert("accounts", {"id": db.new_id("a"), "platform": platform, "name": name,
                                "secrets": res["secrets"], "settings": {}, "created": time.time()})
     db.log(f"Connected {platform.title()}: {a['name']}")
     return _acc_public(a)

@@ -224,7 +224,7 @@ def _status() -> str:
         lines.append("Next upload: " + time.strftime("%a %H:%M", time.localtime(nxt[0]["due"])))
     accs = db.query("SELECT platform, name FROM accounts")
     if accs:
-        lines.append("Accounts: " + ", ".join(f"{a['platform'].title()}" for a in accs))
+        lines.append("Accounts: " + ", ".join(f"{a['platform'].title()} {a['name']}" for a in accs))
     return "\n".join(lines)
 
 
