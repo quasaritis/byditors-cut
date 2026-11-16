@@ -70,6 +70,17 @@ def probe(path: Path) -> dict:
             "fps": fps, "has_audio": a is not None, "size": int(info["format"].get("size", 0) or 0)}
 
 
+def ytdlp_opts(**opts) -> dict:
+    """yt-dlp options plus the JavaScript runtime YouTube now needs to list every format (the `deno` package)."""
+    try:
+        import deno
+
+        opts.setdefault("js_runtimes", {"deno": {"path": deno.find_deno_bin()}})
+    except Exception:  # noqa: BLE001
+        pass
+    return opts
+
+
 def download(url: str, out_dir: Path, log=print) -> tuple[Path, dict]:
     """Download a video with yt-dlp. Returns the file and yt-dlp's info (title, uploader, id...)."""
     import yt_dlp
@@ -94,7 +105,7 @@ def download(url: str, out_dir: Path, log=print) -> tuple[Path, dict]:
         "retries": 5,
         "fragment_retries": 10,
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
+    with yt_dlp.YoutubeDL(ytdlp_opts(**opts)) as ydl:
         info = ydl.extract_info(url, download=True)
     files = sorted(out_dir.glob("source.*"), key=lambda p: p.stat().st_size, reverse=True)
     if not files:

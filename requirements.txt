@@ -6,6 +6,7 @@ python-multipart>=0.0.9
 numpy>=1.26
 opencv-python-headless>=4.9
 yt-dlp[default]>=2026.10.26
+deno>=2.0                 # JavaScript runtime YouTube needs (yt-dlp uses it to see every format, incl. lives)
 websockets>=13
 
 # recommended: speech to text on your PC (captions, Hindi/Hinglish, smarter picks)

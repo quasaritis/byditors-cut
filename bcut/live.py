@@ -52,21 +52,28 @@ def get(jid: str) -> "Session | None":
         return _sessions.get(jid)
 
 
-def resolve(url: str) -> tuple[str, dict, dict]:
-    """The direct stream address (HLS), the headers it needs, and the stream's info."""
+LIVE_FORMAT = "best[height<=1080]/bv*[height<=1080]+ba/bv*+ba/best*/bv*"
+
+
+def resolve(url: str) -> tuple[list[str], dict, dict]:
+    """The stream addresses (one muxed HLS, or separate video + audio), the headers they need, and the stream's info."""
     if Path(url).exists() or url.startswith("file://"):
         p = url.replace("file://", "")
-        return p, {}, {"title": Path(p).stem, "is_live": True}
+        return [p], {}, {"title": Path(p).stem, "is_live": True}
     import yt_dlp
 
-    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "format": "best[height<=1080]/best",
-                           "socket_timeout": 20, "noplaylist": True}) as y:
+    with yt_dlp.YoutubeDL(media.ytdlp_opts(quiet=True, no_warnings=True, format=LIVE_FORMAT, socket_timeout=20,
+                                           noplaylist=True)) as y:
         info = y.extract_info(stream_page(url), download=False)
-    if info.get("_type") == "playlist" or not info.get("url"):
+    if info.get("_type") == "playlist":
         raise RuntimeError("That link is a channel page, not a live stream")
     if not info.get("is_live", True) and info.get("live_status") not in (None, "is_live"):
         raise RuntimeError("Not live right now")
-    return info["url"], info.get("http_headers") or {}, info
+    parts = info.get("requested_formats") or [info]
+    srcs = [f["url"] for f in parts if f.get("url")]
+    if not srcs:
+        raise RuntimeError("The stream gave no playable address")
+    return srcs, (parts[0].get("http_headers") or info.get("http_headers") or {}), info
 
 
 class Session:
@@ -109,7 +116,7 @@ class Session:
         run, misses = 0, 0
         while self.running:
             try:
-                src, headers, info = resolve(self.url)
+                srcs, headers, info = resolve(self.url)
                 self.title = info.get("title") or self.title
                 misses = 0
             except Exception as e:  # noqa: BLE001
@@ -121,13 +128,16 @@ class Session:
                 continue
             offset = self.now()
             cmd = [media.need("ffmpeg"), "-v", "error", "-y"]
-            if self.local:
-                cmd += ["-re"]
-            else:
-                if headers:
-                    cmd += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in headers.items())]
-                cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "10"]
-            cmd += ["-i", src, "-map", "0:v:0?", "-map", "0:a:0?", "-c", "copy", "-f", "segment",
+            for src in srcs:
+                if self.local:
+                    cmd += ["-re"]
+                else:
+                    if headers:
+                        cmd += ["-headers", "".join(f"{k}: {v}\r\n" for k, v in headers.items())]
+                    cmd += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "10"]
+                cmd += ["-i", src]
+            audio_in = len(srcs) - 1
+            cmd += ["-map", "0:v:0?", "-map", f"{audio_in}:a:0?", "-c", "copy", "-f", "segment",
                     "-segment_time", str(config.LIVE_SEGMENT_SEC), "-reset_timestamps", "1",
                     "-segment_list", f"r{run}.csv", "-segment_list_type", "csv", f"r{run}_%06d.ts"]
             db.update("jobs", self.job["id"], step="Recording" + (f" — {self.title[:60]}" if self.title else ""))

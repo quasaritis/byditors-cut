@@ -30,7 +30,9 @@ def _ydl(url: str, flat: bool = False, end: int = 5) -> dict | None:
     if flat:
         opts["extract_flat"] = "in_playlist"
     try:
-        with yt_dlp.YoutubeDL(opts) as y:
+        from . import media
+
+        with yt_dlp.YoutubeDL(media.ytdlp_opts(**opts)) as y:
             return y.extract_info(url, download=False)
     except Exception:  # noqa: BLE001
         return None
