@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import ai, config, db, guard, live, media, pipeline, publish, radar, telegram, tools, transcribe, winsys
+from . import ai, config, db, guard, live, media, pipeline, publish, radar, reframe, telegram, tools, transcribe, winsys
 from .guard import music, rules
 from .publish import platforms
 
@@ -90,7 +90,8 @@ def _clip_public(c: dict) -> dict:
     g = c.get("guard") or {}
     return {**{k: v for k, v in c.items() if k not in ("file", "thumb")},
             "duration": round(c["end"] - c["start"], 1),
-            "guard": {k: v for k, v in g.items() if k != "text"},
+            "guard": {k: v for k, v in g.items() if k not in ("text", "edit")},
+            "can_relayout": bool((g.get("edit") or {}).get("src")) and Path((g.get("edit") or {}).get("src")).exists(),
             "transcript": g.get("text", "")[:1500],
             "streamer": (db.get("streamers", c["streamer_id"]) or {}).get("name") if c.get("streamer_id") else None}
 
@@ -270,6 +271,21 @@ def strip(cid: str):
     return _clip_public(pipeline.strip_music(cid))
 
 
+@app.post("/api/clips/{cid}/layout")
+def clip_layout(cid: str, b: dict = Depends(_body)):
+    """Render the clip again in another layout (facecam split, follow the face, two people, whole frame...)."""
+    _need("clips", cid)
+    try:
+        return _clip_public(pipeline.relayout(cid, str(b.get("layout") or "auto")))
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/layouts")
+def layouts():
+    return {"layouts": [{"id": k, "label": v} for k, v in reframe.LAYOUTS.items()]}
+
+
 @app.post("/api/clips/{cid}/recheck")
 def recheck(cid: str):
     c = _need("clips", cid)
@@ -278,7 +294,7 @@ def recheck(cid: str):
     info = {"duration": (j.get("meta") or {}).get("duration"), "uploaded_by_you": bool((j.get("meta") or {}).get("file"))}
     old = c["guard"] or {}
     rep = guard.review(c, s, info, old.get("text", ""), pipeline._targets(s), old.get("ai_flags"))
-    rep.update({k: old[k] for k in ("text", "ai_flags", "layout") if k in old})
+    rep.update({k: old[k] for k in ("text", "ai_flags", "layout", "layout_choice", "edit") if k in old})
     return _clip_public(db.update("clips", cid, guard=rep, verdict=rep["verdict"]))
 
 

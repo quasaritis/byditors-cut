@@ -77,6 +77,7 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
             "guard": {}, "verdict": "pending", "state": "new", "created": time.time()}
     report = guard.review({**clip, "file": str(out)}, streamer, info, text, _targets(streamer), c.get("flags"))
     report["layout"] = plan.get("mode")
+    report["edit"] = _edit_info(src, c, probe, cw, credit_for(streamer, info), plan)
     report["text"] = text[:4000]
     report["ai_flags"] = c.get("flags") or []
     clip["guard"] = report
@@ -97,6 +98,40 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     except Exception:  # noqa: BLE001
         pass
     return saved
+
+
+def _edit_info(src: Path, c: dict, probe: dict, words: list[dict], credit: str, plan: dict) -> dict:
+    """What it takes to render the clip again in another layout (Inbox → Layout)."""
+    return {"src": str(src), "start": c["start"], "end": c["end"], "w": probe["width"], "h": probe["height"],
+            "has_audio": probe["has_audio"], "hook": c.get("hook", ""), "credit": credit,
+            "words": [{"w": w["w"], "s": round(w["s"], 2), "e": round(w["e"], 2)} for w in words][:600],
+            "auto": plan.get("mode")}
+
+
+def relayout(clip_id: str, layout: str) -> dict:
+    """Render a clip again in the layout you picked (or let it decide again with "auto")."""
+    clip = db.get("clips", clip_id)
+    g = dict(clip["guard"] or {})
+    ed = g.get("edit") or {}
+    src = Path(ed.get("src") or "")
+    if not ed or not src.exists():
+        raise RuntimeError("The original video for this clip is gone (lives are kept for a day), so it can't be "
+                           "rendered again.")
+    want = reframe.ALIASES.get(layout, layout)
+    if want not in reframe.LAYOUTS:
+        raise RuntimeError(f"Unknown layout: {layout}")
+    cuts = media.scene_cuts(src, start=ed["start"], max_seconds=ed["end"] - ed["start"])
+    plan = reframe.analyse(src, ed["start"], ed["end"], ed["w"], ed["h"], cuts, want)
+    out = Path(clip["file"])
+    tmp = out.with_name(out.stem + ".relayout.mp4")
+    render.render(src, tmp, ed["start"], ed["end"], plan, ed["w"], ed["h"], ed.get("words") or [],
+                  hook=ed.get("hook", ""), credit=ed.get("credit", ""), has_audio=ed.get("has_audio", True))
+    shutil.move(str(tmp), out)
+    out.with_name(out.stem + "_tg.mp4").unlink(missing_ok=True)     # phone preview is stale now
+    render.thumbnail(out, Path(clip["thumb"]), at=min(1.5, (ed["end"] - ed["start"]) / 3))
+    g["layout"] = plan.get("mode")
+    g["layout_choice"] = want
+    return db.update("clips", clip_id, guard=g)
 
 
 def run_job(jid: str) -> None:
@@ -176,6 +211,9 @@ def strip_music(clip_id: str) -> dict:
     report = guard.review(clip, streamer, info, clip["guard"].get("text", ""), _targets(streamer),
                           clip["guard"].get("ai_flags"))
     report["text"] = clip["guard"].get("text", "")
+    for k in ("layout", "layout_choice", "edit"):
+        if k in clip["guard"]:
+            report[k] = clip["guard"][k]
     report["music_fix"] = how
     if how == "separated":
         # the song is gone; a fingerprint hit from before no longer applies

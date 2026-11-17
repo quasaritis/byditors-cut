@@ -53,7 +53,7 @@ The tests need ffmpeg but no keys or internet. They take about a minute.
 | `bcut/pipeline.py` | Video → signals → transcript → picks → render → Guard → inbox or post queue |
 | `bcut/radar.py`, `bcut/live.py` | Watching streamers; recording and clipping lives |
 | `bcut/brain.py`, `bcut/ai.py` | Clip picking and captions; the only code that calls an AI service |
-| `bcut/reframe.py`, `bcut/render.py` | 9:16 layouts (face, split, blur) and the ffmpeg render |
+| `bcut/reframe.py`, `bcut/render.py` | 9:16 layouts (split, face, stack, wide, center, fit) and the ffmpeg render; captions avoid faces |
 | `bcut/guard/` | Rights & Safety Guard: rights, music, guideline lexicon, platform rules |
 | `bcut/publish/` | Post queue and the Instagram, YouTube, TikTok and Facebook publishers |
 | `bcut/telegram.py` | Phone alerts and remote control through the person's own Telegram bot |

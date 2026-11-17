@@ -128,14 +128,18 @@ def read_audio(path: Path, start: float = 0.0, duration: float | None = None) ->
     return np.frombuffer(p.stdout, dtype=np.float32).copy()
 
 
-def scene_cuts(path: Path, threshold: float = 0.32, max_seconds: float | None = None) -> list[float]:
-    """Times (seconds) where the picture changes hard. Uses a small, fast decode."""
+def scene_cuts(path: Path, threshold: float = 0.32, max_seconds: float | None = None,
+               start: float = 0.0) -> list[float]:
+    """Times (seconds, in the file's own timeline) where the picture changes hard. Small, fast decode;
+    `start`/`max_seconds` limit it to one stretch of a long file."""
     cmd = [need("ffmpeg"), "-v", "info", "-nostats"]
+    if start:
+        cmd += ["-ss", f"{start:.3f}"]
     if max_seconds:
         cmd += ["-t", str(max_seconds)]
     cmd += ["-i", str(path), "-an", "-vf", f"scale=160:-2,select='gt(scene,{threshold})',showinfo", "-f", "null", "-"]
     p = subprocess.run(cmd, capture_output=True, text=True)
-    return [float(m) for m in re.findall(r"pts_time:([0-9.]+)", p.stderr)]
+    return [start + float(m) for m in re.findall(r"pts_time:([0-9.]+)", p.stderr)]
 
 
 def frame_at(path: Path, t: float, out: Path, width: int = 640) -> Path:

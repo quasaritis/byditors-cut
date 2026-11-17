@@ -128,7 +128,10 @@ def hinglish_word(w: str) -> str:
         x = re.sub(r"I(?=[^aeiouAIU])", "ee", x)
         x = re.sub(r"U(?=[^aeiouAIU])", "oo", x)
     x = x.replace("A", "a").replace("I", "i").replace("U", "u").lower()
-    x = x.replace("chh", "chh").replace("|", ".")
+    x = x.replace("chh", "chh").replace("|", "")
+    # nukta and other marks ITRANS writes as dots/carets (बड़ा → ba.Da): drop them, and any Devanagari left
+    x = re.sub(r"[.^~]", "", x)
+    x = NON_LATIN.sub("", x)
     return lead + x + tail.replace("।", ".").replace("॥", ".")
 
 

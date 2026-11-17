@@ -432,3 +432,80 @@ def test_hindi_words_become_hinglish_offline():
     assert hinglish_word("hello") == "hello"
     ws = _hinglish([{"w": "क्या", "s": 1.0, "e": 1.2}, {"w": "bro", "s": 1.2, "e": 1.4}])
     assert [w["w"] for w in ws] == ["kya", "bro"] and ws[0]["s"] == 1.0
+
+
+def test_every_layout_renders(video, tmp_path):
+    """Each layout's ffmpeg graph (including moving crops) renders a 1080x1920 clip."""
+    from bcut import reframe, render
+    pr = probe(video)
+    plans = {
+        "split": {"mode": "split", "cams": [{"box": [0.02, 0.6, 0.25, 0.32], "face": [0.15, 0.75]}]},
+        "split2": {"mode": "split", "cams": [{"box": [0.64, 0.44, 0.17, 0.22], "face": [0.75, 0.55]},
+                                             {"box": [0.64, 0.66, 0.17, 0.22], "face": [0.75, 0.77]}]},
+        "face": {"mode": "face", "track": [[0, 0.3], [1, 0.3], [2, 0.7], [3, 0.7]]},
+        "stack": {"mode": "stack", "a": {"w": 0.4, "h": 0.6, "track": [[0, 0.25, 0.4], [3, 0.3, 0.45]]},
+                  "b": {"w": 0.4, "h": 0.6, "track": [[0, 0.75, 0.4], [3, 0.7, 0.4]]}},
+        "wide": {"mode": "wide"}, "center": {"mode": "center"},
+    }
+    words = [{"w": w, "s": 0.2 + i * 0.4, "e": 0.5 + i * 0.4} for i, w in enumerate("this is a test, okay?".split())]
+    for name, plan in plans.items():
+        out = render.render(video, tmp_path / f"{name}.mp4", 10, 13, plan, pr["width"], pr["height"], words,
+                            hook="Hook line", credit="@someone")
+        p = probe(out)
+        assert (p["width"], p["height"]) == (1080, 1920), name
+    assert reframe.commands(plans["face"], 3, pr["width"], pr["height"]).count("crop@f x") > 5
+
+
+def test_captions_stay_off_faces():
+    """A face low on the screen (the Obama-in-the-bottom-half case) pushes the caption above it."""
+    from bcut import render
+    faces = [[t, 300, 1250, 780, 1700] for t in np.arange(0, 6, 0.25)]       # face where captions go by default
+    y = render._place(1300, 0, 3, 64, 300, faces, None)
+    assert y + 64 <= 1250 - 0.12 * 450 or y - 64 >= 1700 + 0.3 * 450
+    assert render._place(1300, 0, 3, 64, 300, [], None) == 1300               # nothing in the way: stays put
+    words = [{"w": "y", "s": 0.1, "e": 0.3}, {"w": "'all", "s": 0.3, "e": 0.5}, {"w": "ready,", "s": 0.5, "e": 0.9}]
+    ass = render.build_ass(words, 0, 2, "", "", {"mode": "fit", "faces_out": faces})
+    assert "Y'ALL" in ass and "READY," not in ass and "BorderStyle" in ass and ",3," not in ass.split("Style: Cap")[1][:120]
+
+
+def test_clip_edges_land_between_words():
+    from bcut import brain
+    words, t = [], 0.0
+    for i in range(80):                       # 4-word sentences with a breath after each
+        w = f"w{i}" + ("." if i % 4 == 3 else "")
+        words.append({"w": w, "s": t, "e": t + 0.3})
+        t += 0.35 + (0.5 if i % 4 == 3 else 0)
+    for s, e in [(3.1, 20.4), (7.77, 30.2), (1.0, 60.0)]:
+        a, b = brain._snap(s, e, [], t, 10, 20, words)
+        assert 10 <= b - a <= 20.8
+        for w in words:
+            assert not (w["s"] < a < w["e"]) and not (w["s"] < b < w["e"]), (s, e, a, b)
+
+
+def test_hinglish_drops_nukta_dots():
+    from bcut.transcribe import hinglish_word
+    assert hinglish_word("बड़ा") == "bada" and hinglish_word("थोड़ा") == "thoda"
+
+
+def test_facecam_found_on_gameplay_not_on_a_still_room(tmp_path):
+    """A webcam box over moving 'gameplay' is a cam; the same face on a still camera is not."""
+    import cv2
+    from bcut import reframe
+    rng = np.random.default_rng(1)
+    face = np.full((60, 50, 3), 180, np.uint8)
+    game, room = [], []
+    for i in range(40):
+        g = rng.integers(0, 255, (360, 640, 3), dtype=np.uint8)
+        g = cv2.GaussianBlur(g, (0, 0), 3)
+        g[230:340, 20:180] = 40
+        cv2.rectangle(g, (20, 230), (180, 340), (255, 255, 255), 2)
+        game.append(g)
+        r = np.full((360, 640, 3), 90, np.uint8)
+        r[230:340, 20:180] = 40
+        cv2.rectangle(r, (20, 230), (180, 340), (255, 255, 255), 2)
+        r[260 + i % 3:320 + i % 3, 70:120] = face
+        room.append(r)
+    dets = [[(80 / 640, 262 / 360, 40 / 640, 55 / 360)] for _ in range(40)]
+    cams = reframe.find_cams(dets, game)
+    assert cams and abs(cams[0]["box"][0] - 20 / 640) < 0.02 and abs(cams[0]["box"][3] - 110 / 360) < 0.03
+    assert reframe.find_cams(dets, room) == []

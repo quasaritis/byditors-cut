@@ -325,7 +325,8 @@ class Session:
                 (self.dir / s["file"]).unlink(missing_ok=True)
                 self.segs.remove(s)
         for w in self.dir.glob("w_*.mp4"):
-            if time.time() - w.stat().st_mtime > 1800:
+            # kept a day so a clip can be rendered again in another layout from the Inbox
+            if time.time() - w.stat().st_mtime > 86400:
                 w.unlink(missing_ok=True)
 
     def stop(self):

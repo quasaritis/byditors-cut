@@ -16,7 +16,7 @@ This started from [PeakCut](https://github.com/haziqahmedqasmi/PeakCut) and adds
 |---|---|---|
 | Copyright and guideline check before posting | – | **Rights & Safety Guard**: permission ledger per streamer, local music detector, song ID, music removal, gambling/hate/sexual/doxxing screen, per-platform rules, reused-content check |
 | Streamers watched automatically | Lives | Lives **and new uploads/VODs**, with the back catalogue skipped on first add |
-| Vertical framing | Fixed layouts | **Face tracking** (YuNet) shot by shot, **automatic facecam + gameplay split** for gaming streams, blur-fill |
+| Vertical framing | Fixed layouts | **Smooth face following** that never slices a face, **facecam + gameplay split** (cam found wherever it sits, two cams side by side), **two-person stack**, blur-fill; any clip can be re-rendered in another layout |
 | Moment detection | Loudness, chat, transcript | Loudness, **audio bursts (laughs/screams)**, **scene cuts**, chat velocity with **hype-emote weighting**, transcript AI |
 | Languages | Parakeet (English-first) | **faster-whisper**: 99 languages, Hindi and Hinglish included, GPU if available |
 | Posting | YouTube, Instagram, TikTok | + **Facebook Reels**, a last Guard check before every post, quiet hours, per-account spacing and caps |
@@ -121,8 +121,8 @@ buttons, plus messages when a streamer goes live, a video posts or something fai
 | `bcut/transcribe.py` | faster-whisper with word timestamps |
 | `bcut/brain.py` | Picking moments, hooks, per-platform captions |
 | `bcut/ai.py` | The only code that talks to an AI service |
-| `bcut/reframe.py` | Face tracking and the 9:16 layouts |
-| `bcut/render.py` | ffmpeg render: captions, hook, credit, loudness |
+| `bcut/reframe.py` | Face tracking, facecam detection and the 9:16 layouts |
+| `bcut/render.py` | ffmpeg render: captions placed off faces, hook, credit, loudness |
 | `bcut/guard/` | The Rights & Safety Guard |
 | `bcut/publish/` | Post queue and the four platform publishers |
 | `bcut/server.py` | Local API + dashboard |

@@ -26,8 +26,58 @@ def _fmt(t: float) -> str:
     return f"{t // 3600:d}:{t % 3600 // 60:02d}:{t % 60:02d}"
 
 
-def _snap(s: float, e: float, lines: list[dict], duration: float, min_len: int, max_len: int) -> tuple[float, float]:
-    """Move the edges to the nearest sentence start/end so clips don't begin or end mid-word."""
+_ENDS = (".", "?", "!", "।", "…")
+
+
+def _ends_sentence(w: str) -> bool:
+    return w.rstrip("\"')”’").endswith(_ENDS)
+
+
+def _snap(s: float, e: float, lines: list[dict], duration: float, min_len: int, max_len: int,
+          words: list[dict] | None = None) -> tuple[float, float]:
+    """Move the edges to where an editor would cut: the start of a sentence or a word after a breath, and the
+    end of a sentence or a word before a pause. Never inside a word, also when trimming to the length limits."""
+    ws = [w for w in (words or []) if w["e"] > w["s"]]
+    if not ws:
+        return _snap_lines(s, e, lines, duration, min_len, max_len)
+    n = len(ws)
+    st, en = [], []           # (time, strength, index)
+    for i, w in enumerate(ws):
+        gb = w["s"] - ws[i - 1]["e"] if i else 9.0
+        ga = ws[i + 1]["s"] - w["e"] if i + 1 < n else 9.0
+        sb = i == 0 or _ends_sentence(ws[i - 1]["w"])
+        se = _ends_sentence(w["w"])
+        st.append((w["s"], 2.0 if sb and gb > 0.2 else 1.5 if gb >= 0.6 else 1.0 if (gb >= 0.3 or sb) else 0.0, i))
+        en.append((w["e"], 2.0 if se and ga > 0.2 else 1.5 if ga >= 0.6 else 1.0 if (ga >= 0.3 or se) else 0.0, i))
+
+    def best(cands, target, back, fwd, ok=lambda t: True):
+        good = [c for c in cands if target - back <= c[0] <= target + fwd and c[1] > 0 and ok(c[0])]
+        if good:
+            return max(good, key=lambda c: c[1] * 1.5 - abs(c[0] - target) / 2)
+        near = [c for c in cands if target - 2.5 <= c[0] <= target + 2.5 and ok(c[0])]
+        return min(near, key=lambda c: abs(c[0] - target)) if near else None
+
+    a = best(st, s, 5.0, 3.0)
+    s2 = a[0] if a else s
+    b = best(en, e, 5.0, 5.0, lambda t: min_len <= t - s2 <= max_len)
+    if b is None:                         # nothing in reach: the last word that ends inside the limit
+        inside = [c for c in en if s2 + min_len <= c[0] <= s2 + max_len]
+        b = max(inside, key=lambda c: (c[1], c[0])) if inside else None
+    e2 = b[0] if b else min(duration, s2 + max(min_len, min(max_len, e - s)))
+    # breathing room, without catching the neighbouring words
+    if a:
+        prev_end = ws[a[2] - 1]["e"] if a[2] > 0 else 0.0
+        s2 = max(prev_end + 0.03, s2 - 0.12)
+    if b:
+        next_start = ws[b[2] + 1]["s"] if b[2] + 1 < n else duration
+        e2 = min(next_start - 0.05, e2 + 0.35)
+    s2, e2 = max(0.0, s2), min(duration, e2)
+    return round(s2, 2), round(max(e2, s2 + 1.0), 2)
+
+
+def _snap_lines(s: float, e: float, lines: list[dict], duration: float, min_len: int, max_len: int
+                ) -> tuple[float, float]:
+    """No word timings (no speech): the old line-based snap."""
     if lines:
         starts = [ln["s"] for ln in lines]
         ends = [ln["e"] for ln in lines]
@@ -97,7 +147,7 @@ def by_signals(sig: dict, words: list[dict], duration: float, n: int, min_len: i
         excite = excite * np.exp(-((t - focus) ** 2) / (2 * 12.0 ** 2))
         sig = {**sig, "excite": excite}
     for p in signals.peaks(excite, n * 2, min_gap_sec=max_len):
-        s, e = _snap(p - 0.65 * target, p + 0.35 * target, lines, duration, min_len, max_len)
+        s, e = _snap(p - 0.65 * target, p + 0.35 * target, lines, duration, min_len, max_len, words)
         text = " ".join(w["w"] for w in transcribe.words_between(words, s, e))
         score = signals.mean_between(sig["excite"], s, e)
         hook = pick_hook(words, s, e)
@@ -162,7 +212,7 @@ def by_ai(words: list[dict], sig: dict, duration: float, title: str, who: str, n
                 continue
             if e <= s:
                 continue
-            s, e = _snap(s, e, lines, duration, min_len, max_len)
+            s, e = _snap(s, e, lines, duration, min_len, max_len, words)
             heat = signals.mean_between(sig["excite"], s, e) if len(sig["excite"]) else 0
             found.append({"start": s, "end": e,
                           "score": round(0.8 * float(c.get("score", 60) or 60) + 20 * min(heat, 1), 1),

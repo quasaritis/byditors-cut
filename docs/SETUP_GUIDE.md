@@ -234,8 +234,15 @@ Until TikTok reviews your app, posts are visible only to you. Submit it for revi
      clip-program rules, or your email thread) in **Proof of permission**.
    - **No permission**: clips are made and wait in the Clip inbox. They never post by themselves.
 4. **Credit line**: how they're credited on every clip and caption, for example `@name on Kick`.
-5. **Vertical layout**: *Decide per clip* is right for most people. Use *Facecam on top, gameplay below* for gaming
-   streams.
+5. **Vertical layout**: *Decide per clip* is right for most people. It looks at every clip and picks one of these:
+   - **Facecam on top, gameplay below**: gaming streams. The webcam box is found wherever it sits on screen; two
+     webcams go side by side on top.
+   - **Follow the speaker**: one person on camera. The frame follows them smoothly and never slices a face in half.
+   - **Two people, one above the other**: two people sitting apart (podcasts, interviews).
+   - **Whole frame on blurred fill**: nobody on camera.
+   Pin one here if a streamer always streams the same way. Captions always move off faces, so they never cover a
+   mouth. If one clip comes out in the wrong layout, open it in the Clip inbox, pick another under
+   **Change the layout** and press **Render again**.
 6. Switches:
    - **Clip their lives**: records as soon as they go live and cuts the best moments while they stream.
    - **Clip new uploads**: new videos are downloaded and clipped. Their older videos are skipped.
