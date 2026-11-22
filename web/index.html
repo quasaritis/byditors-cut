@@ -31,6 +31,12 @@ a{color:inherit;text-underline-offset:3px}
 button,input,select,textarea{font:inherit;color:inherit}
 .num,td.n,.kpi b{font-variant-numeric:tabular-nums}
 [hidden]{display:none!important}
+.trim{margin:16px 4px 0;padding-top:14px;border-top:1px solid var(--border)}
+.trim h3{font-size:14px;font-weight:600;margin:0 0 10px}
+.trim video{width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;margin-bottom:10px}
+.trimrow{display:grid;grid-template-columns:38px 1fr 64px auto;align-items:center;gap:8px;margin:4px 0;font-size:13px}
+.trimrow input[type=range]{width:100%;accent-color:var(--accent,#e5a93b)}
+.trimrow output{font-variant-numeric:tabular-nums;color:var(--muted)}
 
 /* shell: ruled T-frame */
 .shell{display:grid;grid-template-columns:220px 1fr;grid-template-rows:64px 1fr;min-height:100vh}
@@ -298,7 +304,7 @@ const dur = s => { s = Math.round(s); const h = Math.floor(s/3600), m = Math.flo
 const VERDICT = {pass: "Ready to post", review: "Needs a look", block: "Blocked", pending: "Checking"};
 const vpill = v => `<span class="pill ${v}">${VERDICT[v] || v}</span>`;
 const RIGHTS = {own: "Your content", permission: "Permission", clip_program: "Clip program", unknown: "No permission"};
-const LAYOUT = {auto: "Decide per clip", split: "Facecam on top, gameplay below", face: "Follow the speaker", stack: "Two people, one above the other", wide: "Whole frame on blurred fill", center: "Centre crop", fit: "Already vertical", blur: "Whole frame on blurred fill"};
+const LAYOUT = {auto: "Decide per clip", split: "Facecam on top, gameplay below", face: "Follow the speaker", stack: "Two people, one above the other", speaker: "Two people, cut to whoever talks", wide: "Whole frame on blurred fill", center: "Centre crop", fit: "Already vertical", blur: "Whole frame on blurred fill"};
 const PLAT = {instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", facebook: "Facebook", kick: "Kick", twitch: "Twitch"};
 
 /* ---------------- routing ---------------- */
@@ -419,9 +425,15 @@ async function showClip(id) {
   box.innerHTML = `<div class="detail">
     <div class="player"><video src="/media/clip/${c.id}.mp4?v=${S.bust || 0}" controls playsinline preload="metadata" poster="/media/thumb/${c.id}.jpg?v=${S.bust || 0}"></video>
       <dl><dt>Length</dt><dd>${dur(c.duration)}</dd><dt>From</dt><dd>${dur(c.start)}–${dur(c.end)}</dd><dt>Layout</dt><dd>${esc(LAYOUT[g.layout] || g.layout || "–")}</dd><dt>Score</dt><dd>${Math.round(c.score)}</dd></dl>
-      ${c.can_relayout && g.layout !== "fit" ? `<div style="margin:14px 4px 0"><label class="f" for="lay">Change the layout</label>
-        <div class="acts"><select class="field" id="lay" style="flex:1;min-width:0">${["auto","split","face","stack","wide","center"].map(k => `<option value="${k}" ${(g.layout_choice || "auto") === k ? "selected" : ""}>${LAYOUT[k]}</option>`).join("")}</select>
-        <button class="btn sm" id="relay">Render again</button></div><p class="hint">Takes about half a minute. Captions move off faces in every layout.</p></div>` : ""}
+      ${c.can_relayout && c.window ? `<div class="trim"><h3>Edit this clip</h3>
+        <video id="srcv" src="/media/source/${c.id}.mp4" controls playsinline preload="metadata"></video>
+        <div class="trimrow"><label for="t-s">Start</label><input type="range" id="t-s" min="0" max="${(c.window.to - c.window.from).toFixed(1)}" step="0.1" value="${(c.window.start - c.window.from).toFixed(1)}"><output id="o-s"></output><button type="button" class="btn ghost sm" data-mark="s">Set to player</button></div>
+        <div class="trimrow"><label for="t-e">End</label><input type="range" id="t-e" min="0" max="${(c.window.to - c.window.from).toFixed(1)}" step="0.1" value="${(c.window.end - c.window.from).toFixed(1)}"><output id="o-e"></output><button type="button" class="btn ghost sm" data-mark="e">Set to player</button></div>
+        <p class="hint" id="t-len"></p>
+        <label class="f" for="t-hook">Hook on screen</label><input class="field" id="t-hook" maxlength="120" value="${esc(c.window.hook || "")}" placeholder="Leave empty for no hook">
+        ${g.layout !== "fit" ? `<label class="f" for="lay" style="margin-top:12px">Layout</label><select class="field" id="lay">${["auto","split","face","speaker","stack","wide","center"].map(k => `<option value="${k}" ${(g.layout_choice || "auto") === k ? "selected" : ""}>${LAYOUT[k]}</option>`).join("")}</select>` : ""}
+        <div class="acts" style="margin-top:12px"><button class="btn sm" type="button" id="t-play">Play the selection</button><button class="btn primary sm" type="button" id="relay">Render again</button></div>
+        <p class="hint">Takes about a minute. Dead air, cold open, zooms and sounds are redone for the new cut.</p></div>` : ""}
       <div class="acts" style="margin:12px 4px 4px"><a class="btn ghost sm" href="/media/clip/${c.id}.mp4" download>Download</a></div></div>
     <div class="col">
       <section class="card" aria-labelledby="h-guard"><div class="verdict ${c.verdict}"><strong id="h-guard">${VERDICT[c.verdict] || c.verdict}</strong><span class="muted">${esc(c.title)}</span></div>
@@ -459,7 +471,21 @@ async function showClip(id) {
   }, now ? "Posting in a few seconds" : "Scheduled in the post queue");
   $("#approve").onclick = send(false); $("#postnow").onclick = send(true);
   if ($("#strip")) $("#strip").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/strip-music`, {method: "POST"}); showClip(id); }, "Music handled and checked again");
-  if ($("#relay")) $("#relay").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/layout`, {method: "POST", body: {layout: $("#lay").value}}); S.bust = Date.now(); showClip(id); }, "Rendered");
+  if ($("#relay")) {
+    const w = c.window, sv = $("#srcv"), ts = $("#t-s"), te = $("#t-e");
+    const draw = () => { if (+ts.value > +te.value - 3) ts.value = Math.max(0, +te.value - 3);
+      $("#o-s").textContent = dur(w.from + +ts.value); $("#o-e").textContent = dur(w.from + +te.value);
+      $("#t-len").textContent = `${(+te.value - +ts.value).toFixed(1)} s before dead air is cut`; };
+    ts.oninput = () => { draw(); sv.currentTime = +ts.value; }; te.oninput = () => { draw(); sv.currentTime = +te.value; };
+    sv.onloadedmetadata = () => { if (sv.duration && isFinite(sv.duration)) { ts.max = te.max = sv.duration.toFixed(1); } sv.currentTime = +ts.value; draw(); };
+    box.querySelectorAll("[data-mark]").forEach(bt => bt.onclick = () => { (bt.dataset.mark === "s" ? ts : te).value = sv.currentTime.toFixed(1); draw(); });
+    let stopAt = null; sv.ontimeupdate = () => { if (stopAt !== null && sv.currentTime >= stopAt) { sv.pause(); stopAt = null; } };
+    $("#t-play").onclick = () => { sv.currentTime = +ts.value; stopAt = +te.value; sv.play(); };
+    draw();
+    $("#relay").onclick = e => act(e.currentTarget, async () => {
+      await api(`/api/clips/${id}/edit`, {method: "POST", body: {start: w.from + +ts.value, end: w.from + +te.value, hook: $("#t-hook").value, layout: $("#lay")?.value, title: $("#ctitle").value}});
+      S.bust = Date.now(); showClip(id); }, "Rendered");
+  }
   $("#recheck").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/recheck`, {method: "POST"}); showClip(id); }, "Checked again");
   $("#reject").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/reject`, {method: "POST"}); viewInbox(); }, "Rejected");
 }
@@ -474,7 +500,7 @@ function streamerForm(s = {}, accs = []) {
     <div class="wide"><label class="f" for="s-ch">Channels</label><textarea class="field" id="s-ch" name="channels" rows="3" placeholder="kick.com/name&#10;twitch.tv/name&#10;youtube.com/@name">${esc(Object.values(ch).join("\n"))}</textarea><p class="hint">Kick, Twitch, YouTube and TikTok links. One per line.</p></div>
     <div><label class="f" for="s-rights">Rights</label><select class="field" id="s-rights" name="rights">${Object.entries(RIGHTS).map(([k,l]) => `<option value="${k}" ${(s.rights || "unknown") === k ? "selected" : ""}>${l}</option>`).join("")}</select><p class="hint">Without permission, clips are made but never posted automatically.</p></div>
     <div><label class="f" for="s-note">Proof of permission</label><input class="field" id="s-note" name="rights_note" value="${esc(s.rights_note)}" placeholder="Link to their clip-program rules or your email thread"></div>
-    <div><label class="f" for="s-layout">Vertical layout</label><select class="field" id="s-layout" name="layout">${["auto","split","face","stack","wide","center"].map(k => `<option value="${k}" ${((s.layout === "blur" ? "wide" : s.layout)||"auto") === k ? "selected" : ""}>${LAYOUT[k]}</option>`).join("")}</select></div>
+    <div><label class="f" for="s-layout">Vertical layout</label><select class="field" id="s-layout" name="layout">${["auto","split","face","speaker","stack","wide","center"].map(k => `<option value="${k}" ${((s.layout === "blur" ? "wide" : s.layout)||"auto") === k ? "selected" : ""}>${LAYOUT[k]}</option>`).join("")}</select></div>
     <div><label class="f" for="s-lang">Language</label><select class="field" id="s-lang" name="language">${[["","Detect"],["hi","Hindi / Hinglish"],["en","English"],["ur","Urdu"],["ta","Tamil"],["te","Telugu"],["bn","Bengali"],["mr","Marathi"],["es","Spanish"]].map(([k,l]) => `<option value="${k}" ${(s.language||"") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="wide">
       <div class="swrow"><div><b>Clip their lives</b><p>Record as soon as they go live and cut the spikes while they stream.</p></div><span class="tog"><input type="checkbox" name="auto_live" aria-label="Clip their lives" ${s.auto_live !== 0 ? "checked" : ""}><span></span></span></div>
@@ -581,6 +607,8 @@ async function viewSettings() {
       <div class="wide"><label class="f" for="ai-m">Model</label><div style="display:flex;gap:8px"><input class="field" id="ai-m" name="model" list="ai-list" value="${esc(d.ai.model)}" placeholder="Press Find models, or type a model id"><datalist id="ai-list"></datalist><button type="button" class="btn" id="ai-find">Find models</button></div><p class="hint">Fast, cheap models are listed first. That's the right kind for picking clips.</p></div>
       <div class="wide"><label class="f" for="ai-b">Address (custom service only)</label><input class="field" id="ai-b" name="base_url" value="${esc(d.ai.base_url)}" placeholder="https://…/v1"></div>
       <div class="wide acts"><button class="btn primary">Save and test</button></div></form></div></div>
+  <div class="sect"><div><h2>Editing</h2><p>What the editor does to every clip. Drop your own sounds named boom, hit, whoosh, rewind or pop (.mp3/.wav/.ogg) into data\\sfx to use them instead of the built-in ones.</p></div>
+    <div class="panel" id="edpanel"><p class="muted" style="margin:0">Loading…</p></div></div>
   <div class="sect"><div><h2>This PC</h2><p>Byditors Cut only works while this PC is on. These keep it running.</p></div>
     <div class="panel" id="pcpanel"><p class="muted" style="margin:0">Loading…</p></div></div>
   <div class="sect"><div><h2>Phone alerts</h2><p>Your own Telegram bot sends you every new clip as a video with Approve and Reject buttons, plus lives, uploads and problems. Commands: /status, /today, /review, /restart.</p></div>
@@ -602,6 +630,14 @@ async function viewSettings() {
   main.querySelectorAll(".keyform").forEach(f => f.onsubmit = e => { e.preventDefault(); const v = f.v.value.trim(); if (!v) return toast("Paste the key first", true);
     act(f.querySelector("button"), async () => { await api("/api/settings/keys", {method: "POST", body: {[f.dataset.key]: v}}); await loadState(); viewSettings(); }, "Key saved"); });
   main.querySelectorAll("[data-clear]").forEach(b => b.onclick = () => act(b, async () => { await api("/api/settings/keys", {method: "POST", body: {[b.dataset.clear]: ""}}); await loadState(); viewSettings(); }, "Key removed"));
+  api("/api/edit-style").then(d => {
+    $("#edpanel").innerHTML = Object.entries(d.labels).map(([k, l]) => `<div class="swrow"><div><b>${esc(l)}</b></div><span class="tog"><input type="checkbox" data-ed="${k}" aria-label="${esc(l)}" ${d.style[k] ? "checked" : ""}><span></span></span></div>`).join("");
+    api("/api/learn").then(L => { const el = document.createElement("div"); el.className = "swrow";
+      const tested = Object.entries(L.styles).filter(([, v]) => v.n);
+      el.innerHTML = `<div><b>Learning from your views</b><p>${L.posts ? `${L.posts} posts read, ${L.views.toLocaleString()} views. ` + (tested.length ? "Hook styles so far: " + tested.map(([k, v]) => `${k} ${v.lift}× (${v.n})`).join(", ") + "." : "Hook styles get compared once a few posts have views.") : "Once clips are posted, their views are read every 6 hours. Clips like your winners get posted first, and new hooks learn from your best ones."}</p></div><button type="button" class="btn ghost sm" id="lrn">Read views now</button>`;
+      $("#edpanel").append(el); $("#lrn").onclick = e => act(e.currentTarget, async () => { const r = await api("/api/learn/refresh", {method: "POST"}); viewSettings(); return r; }, "Views read"); }).catch(() => {});
+    $("#edpanel").querySelectorAll("[data-ed]").forEach(i => i.onchange = () => api("/api/edit-style", {method: "POST", body: {[i.dataset.ed]: i.checked}}).then(() => toast("Saved. New clips use it.")).catch(e => { i.checked = !i.checked; toast(e.message, true); }));
+  }).catch(() => {});
   api("/api/settings/pc").then(pc => {
     const row = (k, title, text, on, dis) => `<div class="swrow"><div><b>${title}</b><p>${text}</p></div><span class="tog"><input type="checkbox" data-pc="${k}" aria-label="${title}" ${on ? "checked" : ""} ${dis ? "disabled" : ""}><span></span></span></div>`;
     $("#pcpanel").innerHTML = row("autostart", "Start with Windows", pc.windows ? "Opens Byditors Cut in the background when you sign in to Windows, so lives are caught even if you forget." : "Windows only.", pc.autostart, !pc.windows)

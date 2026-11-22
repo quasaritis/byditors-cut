@@ -29,6 +29,7 @@ LAYOUTS = {
     "split": "Facecam on top, gameplay below",
     "face": "Follow the speaker",
     "stack": "Two people, one above the other",
+    "speaker": "Two people, cut to whoever is talking",
     "wide": "Whole frame on blurred fill",
     "center": "Centre crop",
 }
@@ -369,6 +370,110 @@ def _two_people(dets, cw: float) -> tuple[bool, list[tuple[float, float, float, 
     return True, [tuple(A), tuple(B)]
 
 
+# ── who is talking ───────────────────────────────────────────────────────────────────────────────────────
+
+def _voice(src: Path, start: float, end: float, ts) -> np.ndarray | None:
+    """Is someone talking at each sample time (True/False), from the loudness of the sound."""
+    try:
+        a = media.read_audio(src, start, end - start)
+    except Exception:  # noqa: BLE001
+        return None
+    if a is None or len(a) < media.SR:
+        return None
+    win = int(media.SR * 0.25)
+    lv = []
+    for t in ts:
+        i = int(t * media.SR)
+        seg = a[max(0, i - win // 2): i + win // 2]
+        lv.append(20 * np.log10(np.sqrt(float((seg ** 2).mean()) + 1e-10) + 1e-10) if len(seg) else -90)
+    lv = np.array(lv)
+    return lv > max(np.percentile(lv, 30), np.median(lv) - 6)
+
+
+def _mouth_motion(imgs, person) -> np.ndarray:
+    """How much one person's mouth moves between samples, with head movement taken out
+    (mouth change minus forehead/eye change)."""
+    import cv2
+
+    x, y, w, h = person
+    out = [0.0]
+    prev = None
+    for img in imgs:
+        H, W = img.shape[:2]
+        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        mx0, mx1 = int((x + 0.2 * w) * W), int((x + 0.8 * w) * W)
+        mouth = g[int((y + 0.62 * h) * H):int(min(1.0, y + 1.02 * h) * H), mx0:mx1]
+        eyes = g[int((y + 0.15 * h) * H):int((y + 0.45 * h) * H), mx0:mx1]
+        if prev is not None and mouth.size and eyes.size and mouth.shape == prev[0].shape:
+            dm = float(np.abs(mouth - prev[0]).mean())
+            de = float(np.abs(eyes - prev[1]).mean()) if eyes.shape == prev[1].shape else 0.0
+            out.append(max(0.0, dm - 0.8 * de))
+        elif prev is not None:
+            out.append(0.0)
+        prev = (mouth, eyes)
+    return np.array(out[:len(imgs)])
+
+
+def _speaker_plan(ts, imgs, people, voiced, cuts, cw, force=False) -> dict | None:
+    """Cut between the two people like a podcast editor: on whoever is talking, holding each shot at least
+    1.5 seconds, and staying put while nobody talks."""
+    if len(imgs) < 8:
+        return None
+    ma = _smooth(_mouth_motion(imgs, people[0]), 2)
+    mb = _smooth(_mouth_motion(imgs, people[1]), 2)
+    if voiced is None or len(voiced) != len(ts):
+        voiced = np.ones(len(ts), bool)
+    scale = max(1e-6, float(np.percentile(np.concatenate([ma, mb]), 90)))
+    ma, mb = ma / scale, mb / scale
+    raw = []
+    for i in range(len(ts)):
+        if not voiced[i] or max(ma[i], mb[i]) < 0.25:
+            raw.append(None)
+        elif ma[i] > 1.25 * mb[i]:
+            raw.append("a")
+        elif mb[i] > 1.25 * ma[i]:
+            raw.append("b")
+        else:
+            raw.append(None)
+    cur = next((r for r in raw if r), "a")
+    who, since, lead = [], -9.0, None
+    for i, t in enumerate(ts):
+        r = raw[i]
+        if r and r != cur:
+            # switch once the other person has led for half a second and this shot has run 1.5 s; the cut
+            # goes back to the moment they started talking
+            lead = lead if lead and lead[0] == r else (r, t, i)
+            if t - lead[1] >= 0.5 and lead[1] - since >= 1.5:
+                cur, since = r, lead[1]
+                for j in range(lead[2], i):
+                    who[j] = cur
+                lead = None
+        elif r == cur:
+            lead = None
+        who.append(cur)
+    share_a = who.count("a") / len(who)
+    switches = sum(1 for x, y in zip(who, who[1:]) if x != y)
+    if not force and (switches == 0 or min(share_a, 1 - share_a) < 0.12):
+        return None                       # one person does the talking: the stack shows both instead
+    # the window for each person: their face centred, inside the frame
+    lo, hi = cw / 2, 1 - cw / 2
+    pos = {k: float(np.clip(p[0] + p[2] / 2, lo, hi)) for k, p in zip(("a", "b"), people)}
+    track, shots = [], []
+    for i, t in enumerate(ts):
+        if i and who[i] != who[i - 1]:
+            # a hard cut, half a beat before the new speaker's line: a tiny lead feels like a human editor
+            tc = max(float(ts[i - 1]) + 0.01, float(t) - 0.12)
+            track.append([round(tc - 0.005, 3), round(pos[who[i - 1]], 4)])
+            track.append([round(tc, 3), round(pos[who[i]], 4)])
+            shots[-1][1] = round(tc, 3)
+            shots.append([round(tc, 3), None, who[i]])
+        elif not i:
+            shots.append([0.0, None, who[0]])
+        track.append([round(float(t), 3), round(pos[who[i]], 4)])
+    shots[-1][1] = round(float(ts[-1]) + 1.0, 3)
+    return {"mode": "speaker", "track": track, "speakers": shots}
+
+
 # ── the plan ─────────────────────────────────────────────────────────────────────────────────────────────
 
 def analyse(src: Path, start: float, end: float, src_w: int, src_h: int, cuts: list[float] | None = None,
@@ -391,7 +496,8 @@ def analyse(src: Path, start: float, end: float, src_w: int, src_h: int, cuts: l
     imgs = [img for _, img in shots]
     dets = [_faces(img, det) for img in imgs]
     text = textscan.scan(imgs, list(ts))
-    plan = _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text)
+    plan = _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text,
+                   voice=lambda: _voice(src, start, end, ts))
     plan["faces"] = round(sum(1 for d in dets if d) / len(dets), 2)
     plan["faces_out"] = _project(plan, ts, dets, src_w, src_h)
     # text already in the picture: its own subtitles mean we add none; any text is kept clear of
@@ -403,7 +509,7 @@ def analyse(src: Path, start: float, end: float, src_w: int, src_h: int, cuts: l
     return plan
 
 
-def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text=None) -> dict:
+def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text=None, voice=None) -> dict:
     if src_h >= src_w * 1.2:
         return {"mode": "fit"}
     if want in ("center", "wide"):
@@ -422,9 +528,15 @@ def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text=None) -> 
             return {"mode": "split", "cams": [{"box": [round(v, 4) for v in c["box"]],
                                                 "face": [round(v, 4) for v in c["face"]]} for c in cams]}
 
-    if want in ("auto", "stack"):
+    if want in ("auto", "stack", "speaker"):
         two, people = _two_people(dets, cw)
-        if two or want == "stack":
+        if two and want in ("auto", "speaker"):
+            sp = _speaker_plan(ts, imgs, people, voice() if voice else None, rel_cuts, cw, force=want == "speaker")
+            if sp:
+                return sp
+        if want == "speaker" and not two:
+            want = "face"                      # nobody to cut between: just follow the face
+        elif two or want in ("stack", "speaker"):
             if not people:
                 people = [(0.2, 0.3, 0.1, 0.18), (0.7, 0.3, 0.1, 0.18)]
             return {"mode": "stack", **_stack_tracks(ts, dets, people, rel_cuts, src_w, src_h)}
@@ -509,10 +621,10 @@ def panels(plan: dict, src_w: int, src_h: int, t: float = 0.0) -> list[dict]:
         s = max(OUT_W / src_w, OUT_H / src_h)
         w, h = OUT_W / s, OUT_H / s
         return [{"src": ((src_w - w) / 2, (src_h - h) / 2, w, h), "out": (0, 0, OUT_W, OUT_H)}]
-    if mode in ("face", "center"):
+    if mode in ("face", "center", "speaker"):
         cw = min(src_w, src_h * 9 / 16)
         x = (src_w - cw) / 2
-        if mode == "face" and plan.get("track"):
+        if mode in ("face", "speaker") and plan.get("track"):
             x = min(src_w - cw, max(0.0, _at(plan["track"], t) * src_w - cw / 2))
         return [{"src": (x, 0, cw, src_h), "out": (0, 0, OUT_W, OUT_H), "name": "f"}]
     if mode == "stack":
@@ -590,7 +702,7 @@ def _project(plan: dict, ts, dets, src_w: int, src_h: int) -> list[list[int]]:
 def commands(plan: dict, dur: float, src_w: int, src_h: int) -> str:
     """sendcmd lines that move the crop windows frame by frame (empty when the layout doesn't move)."""
     mode = plan.get("mode")
-    if mode not in ("face", "stack") or (mode == "face" and not plan.get("track")):
+    if mode not in ("face", "stack", "speaker") or (mode in ("face", "speaker") and not plan.get("track")):
         return ""
     lines, last = [], {}
     for t in np.arange(0, dur + 1 / FPS, 1 / FPS):
@@ -621,7 +733,7 @@ def filter_graph(plan: dict, src_w: int, src_h: int, has_cmds: bool = False) -> 
     if mode == "fit":
         return (f"[0:v]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
                 f"crop={OUT_W}:{OUT_H},setsar=1[v]")
-    if mode in ("face", "center"):
+    if mode in ("face", "center", "speaker"):
         return f"[0:v]{send}{_crop(ps[0]['src'], src_w, src_h, 'f')},scale={OUT_W}:{OUT_H},setsar=1[v]"
     if mode == "wide":
         return (f"[0:v]split=2[a][b];[a]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"

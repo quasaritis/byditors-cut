@@ -57,6 +57,25 @@ If you close the browser tab, open http://127.0.0.1:8777 again. The app keeps ru
 
 Clips are saved in the app's `data\clips` folder as 1080 × 1920 MP4 files.
 
+### What the editor does to every clip
+
+- **Cuts dead air** between sentences. Screams, laughs and reactions are kept, and never more than a quarter of the
+  clip is taken out.
+- **Cold open**: the clip starts on its loudest 2 seconds, rewinds with a scratch, then plays from the setup.
+- **Punch-in zooms** toward the face on the big moments, with a small shake on the biggest one.
+- **Sound hits** under the zooms and the rewind: real recorded sounds (free CC0 sounds by Kenney). To use your own,
+  put files called `boom`, `hit`, `whoosh`, `rewind` or `pop` (.mp3, .wav or .ogg) in the app's `data\sfx` folder.
+- **Seamless loop**: the last quarter second dissolves into the first frame, so the replay doesn't jump.
+- **Cover image**: the frame on the biggest reaction. It's used as the Instagram and TikTok cover.
+
+Turn any of these off in **Guard & settings → Editing**.
+
+### Fixing a clip by hand
+
+Open a clip in the **Clip inbox**. Under the video, **Edit this clip** shows the original with 15 seconds either
+side. Drag **Start** and **End** (or play it and press **Set to player**), press **Play the selection** to check,
+change the hook or the layout if you like, then **Render again**. It takes about a minute.
+
 ---
 
 ## 3. Free AI with Gemini (recommended)
@@ -249,10 +268,12 @@ Until TikTok reviews your app, posts are visible only to you. Submit it for revi
      webcams go side by side on top.
    - **Follow the speaker**: one person on camera. The frame follows them smoothly and never slices a face in half.
    - **Two people, one above the other**: two people sitting apart (podcasts, interviews).
+   - **Two people, cut to whoever talks**: the same, full screen, cutting to whoever is talking like a podcast
+     editor. Captions change colour with the speaker. *Decide per clip* uses this when both people talk.
    - **Whole frame on blurred fill**: nobody on camera.
    Pin one here if a streamer always streams the same way. Captions always move off faces, so they never cover a
    mouth. If one clip comes out in the wrong layout, open it in the Clip inbox, pick another under
-   **Change the layout** and press **Render again**.
+   **Edit this clip → Layout** and press **Render again**.
 6. Switches:
    - **Clip their lives**: records as soon as they go live and cuts the best moments while they stream.
    - **Clip new uploads**: new videos are downloaded and clipped. Their older videos are skipped.
@@ -261,6 +282,10 @@ Until TikTok reviews your app, posts are visible only to you. Submit it for revi
 7. **Save.** The app checks every streamer every 2 minutes.
 
 During a live you can also press **Clip last 45 s** on Today to grab the last 45 seconds by hand.
+
+**"Clip that"**: when the streamer says "clip that", "clip it" or "clip kar/karo", or chat spams "clip it" (Twitch
+and Kick), the moment before it is clipped right away. Saying it needs Speech to text installed. To switch the
+voice trigger off, set `BCUT_LIVE_VOICE_TRIGGER=0` in `.env`.
 
 ---
 
@@ -277,6 +302,11 @@ With several channels, each one gets its own number, for example 3 a day on one 
 - Nothing posts between 1 am and 7 am. You can change that in `.env` (`BCUT_QUIET_HOURS`).
 
 The **Queue** page shows everything scheduled. Each item has **Post now** and **Cancel**.
+
+**It learns from your views.** Every 6 hours the views, likes and comments of your Instagram and YouTube posts are
+read back. Clips from the streamers and hook styles that got the most views go out first, and the AI is shown your
+best hooks when it writes new ones. Hooks are tested in five styles (question, shock, quote, stakes, POV): mostly the
+winner so far, sometimes another. **Guard & settings → Editing** shows how each style is doing.
 
 ---
 

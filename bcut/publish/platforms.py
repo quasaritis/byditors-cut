@@ -93,6 +93,8 @@ def post_instagram(account: dict, clip: dict, caption: str) -> tuple[str, str]:
     path = Path(clip["file"])
     box = _check(httpx.post(f"https://{host}/{V}/{s['user_id']}/media", timeout=T, data={
         "media_type": "REELS", "upload_type": "resumable", "caption": caption, "share_to_feed": "true",
+        # the cover: the frame the editor picked (the biggest reaction), in milliseconds
+        "thumb_offset": str(int(1000 * float(((clip.get("guard") or {}).get("cover_at")) or 1.0))),
         "access_token": s["token"]}))
     cid = box["id"]
     _check(httpx.post(box.get("uri") or f"https://rupload.facebook.com/ig-api-upload/{V}/{cid}", timeout=T,
@@ -243,7 +245,7 @@ def post_tiktok(account: dict, clip: dict, caption: str) -> tuple[str, str]:
     count = max(1, size // chunk)
     init = _check(httpx.post(f"{TT}/post/publish/video/init/", headers=h, timeout=T, json={
         "post_info": {"title": caption[:2200], "privacy_level": privacy, "disable_duet": False,
-                      "disable_comment": False, "disable_stitch": False, "video_cover_timestamp_ms": 1000},
+                      "disable_comment": False, "disable_stitch": False, "video_cover_timestamp_ms": int(1000 * float(((clip.get("guard") or {}).get("cover_at")) or 1.0))},
         "source_info": {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": chunk,
                         "total_chunk_count": count}}))["data"]
     data = path.read_bytes()

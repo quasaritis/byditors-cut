@@ -561,3 +561,127 @@ def test_videos_with_their_own_subtitles_get_none_of_ours(video, tmp_path):
     assert "Style: Cap" in ass and "Dialogue: 1," not in ass
     plan = reframe.analyse(subbed, 0, 6, 1080, 1920, [], "auto")
     assert plan["burned"] and plan["mode"] == "fit"
+
+
+# ---------------------------------------------------------------- the edit passes
+
+def _talky(tmp: Path) -> Path:
+    """30 s: talking (pulsed noise) with silent gaps at 6-9 s and 17-20 s, a scream at 23-25 s."""
+    out = tmp / "talk.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=960x540:r=30:d=30",
+        "-f", "lavfi", "-i", "anoisesrc=d=30:c=pink:a=0.12",
+        "-filter_complex", "[1:a]apulsator=hz=3,volume='if(between(t,6,9)+between(t,17,20),0.02,"
+                           "if(between(t,23,25),6,1))':eval=frame[a]",
+        "-map", "0:v", "-map", "[a]", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest",
+        str(out)], check=True)
+    return out
+
+
+def _talk_words():
+    ws = []
+    for a, b in ((0.3, 5.8), (9.2, 16.8), (20.2, 29.5)):
+        t = a
+        while t + 0.35 < b:
+            ws.append({"w": "word", "s": round(t, 2), "e": round(t + 0.3, 2)})
+            t += 0.4
+    return ws
+
+
+def test_dead_air_is_cut_and_screams_are_kept(tmp_path):
+    from bcut import fx
+    src = _talky(tmp_path)
+    st = {**fx.DEFAULTS, "cold_open": False}
+    e = fx.plan(src, 0, 30, _talk_words(), True, st)
+    joins = [(a[1], b[0]) for a, b in zip(e["pieces"], e["pieces"][1:])]
+    assert any(5.5 < g0 < 6.5 and 8.5 < g1 < 9.5 for g0, g1 in joins), e
+    assert e["removed"] >= 4.5
+    assert not any(g0 < 24 < g1 for g0, g1 in joins)          # the scream stays
+
+
+def test_produce_cuts_cold_opens_punches_and_loops(tmp_path):
+    from bcut import fx
+    src = _talky(tmp_path)
+    out = tmp_path / "made.mp4"
+    made = pipeline.produce(src, out, 0, 30, 960, 540, True, _talk_words(), "Hook line", "@x", "center",
+                            st=dict(fx.DEFAULTS))
+    p = probe(out)
+    assert (p["width"], p["height"]) == (1080, 1920)
+    assert made["info"]["cold"] and made["info"]["removed"] > 3
+    assert made["fx"]["punches"] and any(s["name"] == "rewind" for s in made["fx"]["sounds"])
+    assert abs(p["duration"] - made["dur"]) < 0.4 and made["dur"] < 30
+    import json
+    json.dumps(made["info"]), json.dumps(made["fx"])            # everything stored is plain JSON
+
+
+def test_every_pass_can_be_switched_off(tmp_path):
+    from bcut import fx
+    src = _talky(tmp_path)
+    off = {k: False for k in fx.DEFAULTS}
+    made = pipeline.produce(src, tmp_path / "plain.mp4", 2, 14, 960, 540, True, _talk_words(), "", "", "center", st=off)
+    assert made["info"]["removed"] == 0 and not made["fx"]["punches"] and not made["fx"]["sounds"]
+    assert abs(probe(tmp_path / "plain.mp4")["duration"] - 12) < 0.3
+    assert fx.set_style({"punch": False})["punch"] is False and fx.style()["tighten"] is True
+    fx.set_style({"punch": True})
+
+
+def test_speaker_cuts_between_whoever_talks():
+    from bcut import reframe
+    rng = np.random.default_rng(1)
+    imgs, ts = [], np.arange(0, 12, 0.25)
+    base = (rng.random((360, 640, 3)) * 60 + 80).astype(np.uint8)
+    for t in ts:
+        im = base.copy()
+        talker = 0 if (t // 3) % 2 == 0 else 1             # A talks 0-3, B 3-6, A 6-9, B 9-12
+        x0 = 64 if talker == 0 else 512
+        im[150:180, x0:x0 + 40] = rng.integers(0, 255, (30, 40, 3), dtype=np.uint8)   # a moving mouth
+        imgs.append(im)
+    people = [(0.09, 0.3, 0.1, 0.22), (0.79, 0.3, 0.1, 0.22)]
+    plan = reframe._speaker_plan(ts, imgs, people, np.ones(len(ts), bool), [], 0.32)
+    assert plan and plan["mode"] == "speaker"
+    who = [s[2] for s in plan["speakers"]]
+    assert who[:4] == ["a", "b", "a", "b"], plan["speakers"]
+    assert 2.4 < plan["speakers"][1][0] < 3.6
+
+
+def test_clip_that_from_the_streamer_and_from_chat():
+    from bcut.live import CHAT_CALL, CLIP_CALL
+    assert CLIP_CALL.search("yo chat clip that right now") and CLIP_CALL.search("bhai clip karo")
+    assert not CLIP_CALL.search("he clipped the car") and not CLIP_CALL.search("nice clip")
+    assert CHAT_CALL.search("CLIP IT") and CHAT_CALL.search("!clip") and CHAT_CALL.search("clipppp")
+    assert not CHAT_CALL.search("eclipse") and not CHAT_CALL.search("clipboard")
+
+
+def test_views_steer_the_autopilot_and_the_hook_style():
+    from bcut import learn
+    import random
+    db.kv_set("post_metrics", {})
+    for i in range(8):
+        style = "question" if i % 2 else "quote"
+        c = db.insert("clips", {"id": f"cl{i}", "job_id": "j", "title": "t", "hook": f"hook {i}", "start": 0, "end": 10,
+                                "score": 50, "file": "x", "thumb": "x", "captions": {}, "state": "posted",
+                                "guard": {"hook_style": style}, "verdict": "pass", "created": time.time()})
+        m = learn._metrics()
+        m[f"p{i}"] = {"views": 9000 if style == "question" else 1000, "likes": 0, "clip": c["id"],
+                      "platform": "instagram", "at": time.time()}
+        db.kv_set("post_metrics", m)
+    st = learn.style_stats()
+    assert st["question"]["lift"] > st["quote"]["lift"]
+    picks = [learn.pick_style(random.Random(i)) for i in range(200)]
+    assert picks.count("question") > picks.count("quote")
+    assert learn.boost({"guard": {"hook_style": "question"}}) > learn.boost({"guard": {"hook_style": "quote"}})
+    assert "hook" in learn.prompt_extra("question") and learn.top_hooks()
+    db.kv_set("post_metrics", {})
+
+
+def test_trim_editor_renders_a_new_cut(tmp_path):
+    src = _talky(tmp_path)
+    pr = probe(src)
+    job = {"id": "jtrim", "streamer_id": None, "url": ""}
+    c = {"start": 2.0, "end": 14.0, "score": 60, "hook": "First hook", "title": "Trim me", "why": ""}
+    clip = pipeline.make_clip(job, src, pr, {"title": "t", "uploaded_by_you": True}, c, _talk_words(), None, [])
+    out = pipeline.rerender(clip["id"], start=10.0, end=22.0, hook="New hook", layout="center")
+    assert out["start"] == 10.0 and out["end"] == 22.0 and out["hook"] == "New hook"
+    assert out["guard"]["edit"]["hook"] == "New hook" and out["guard"]["layout_choice"] == "center"
+    with pytest.raises(RuntimeError):
+        pipeline.rerender(clip["id"], start=10.0, end=11.0)

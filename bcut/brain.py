@@ -178,7 +178,8 @@ def by_signals(sig: dict, words: list[dict], duration: float, n: int, min_len: i
     return keep
 
 
-def _chunk_prompt(lines: list[dict], sig: dict, title: str, who: str, n: int, min_len: int, max_len: int) -> str:
+def _chunk_prompt(lines: list[dict], sig: dict, title: str, who: str, n: int, min_len: int, max_len: int,
+                  extra: str = "") -> str:
     hot = sig["excite"]
     rows = []
     for ln in lines:
@@ -197,13 +198,14 @@ def _chunk_prompt(lines: list[dict], sig: dict, title: str, who: str, n: int, mi
         "Also flag risks you notice inside the clip: 'gambling' (casino, slots, betting sponsor), 'music' (they "
         "play/sing a song), 'watching_media' (reacting to a TV show, film, sports broadcast or another creator's "
         "video), 'hate', 'sexual', 'violence', 'dangerous_act', 'drugs', 'personal_info', 'minor'.\n"
+        + (extra + "\n" if extra else "") +
         'Return {"clips":[{"start":0.0,"end":0.0,"score":0-100,"hook":"3-7 word on-screen hook, rules above",'
         '"title":"max 60 chars, rules above","why":"one sentence","flags":["..."]}]}'
     )
 
 
 def by_ai(words: list[dict], sig: dict, duration: float, title: str, who: str, n: int,
-          min_len: int, max_len: int, log=print) -> list[dict]:
+          min_len: int, max_len: int, log=print, extra: str = "") -> list[dict]:
     lines = transcribe.lines(words)
     if not lines:
         raise RuntimeError("No transcript")
@@ -216,7 +218,8 @@ def by_ai(words: list[dict], sig: dict, duration: float, title: str, who: str, n
         if len(part) < 4:
             continue
         log(f"AI reading {_fmt(part[0]['s'])}–{_fmt(part[-1]['e'])}")
-        res = ai.ask_json(SYSTEM_CLIPS, _chunk_prompt(part, sig, title, who, max(2, n // 2 + 1), min_len, max_len))
+        res = ai.ask_json(SYSTEM_CLIPS, _chunk_prompt(part, sig, title, who, max(2, n // 2 + 1), min_len, max_len,
+                                                      extra=extra))
         for c in (res.get("clips") or [])[:8]:
             try:
                 s, e = float(c["start"]), float(c["end"])
@@ -241,11 +244,12 @@ def by_ai(words: list[dict], sig: dict, duration: float, title: str, who: str, n
     return keep
 
 
-def _hook_for(words: list[dict], title: str, who: str) -> dict:
+def _hook_for(words: list[dict], title: str, who: str, extra: str = "") -> dict:
     """Hook and title for a clip whose edges are already set."""
     text = " ".join(w["w"] for w in words)
     res = ai.ask_json(SYSTEM_CLIPS, f"Video title: {ai.safe(title, 150)}\nCreator: {ai.safe(who, 80)}\n"
                       f"<transcript>\n{ai.safe(text, 2500)}\n</transcript>\n"
+                      + (extra + "\n" if extra else "") +
                       "This whole video is the clip. Write its on-screen hook and its title by the rules above, and flag "
                       "risks as before ('gambling', 'music', 'watching_media', 'hate', 'sexual', 'violence', "
                       "'dangerous_act', 'drugs', 'personal_info', 'minor').\n"
@@ -263,8 +267,17 @@ def _hook_for(words: list[dict], title: str, who: str) -> dict:
 def find_clips(words: list[dict], sig: dict, duration: float, title: str = "", who: str = "",
                n: int | None = None, min_len: int | None = None, max_len: int | None = None, log=print,
                focus: float | None = None) -> list[dict]:
-    clips = _find_clips(words, sig, duration, title, who, n, min_len, max_len, log, focus)
+    from . import learn
+
+    try:
+        style = learn.pick_style()
+        extra = learn.prompt_extra(style)
+    except Exception:  # noqa: BLE001
+        style, extra = "", ""
+    clips = _find_clips(words, sig, duration, title, who, n, min_len, max_len, log, focus, extra)
     for c in clips:
+        if ai.enabled() and c.get("hook"):
+            c["hook_style"] = style
         if not transcribe.readable(c.get("title") or ""):
             c["title"] = _fallback_title(title, who)
         if c.get("hook") and not transcribe.readable(c["hook"]):
@@ -282,7 +295,8 @@ def _fallback_title(source_title: str, who: str) -> str:
 
 
 def _find_clips(words: list[dict], sig: dict, duration: float, title: str, who: str,
-                n: int | None, min_len: int | None, max_len: int | None, log, focus: float | None) -> list[dict]:
+                n: int | None, min_len: int | None, max_len: int | None, log, focus: float | None,
+                extra: str = "") -> list[dict]:
     n = n or config.CLIPS_PER_VIDEO
     min_len = min_len or config.CLIP_MIN
     max_len = max_len or config.CLIP_MAX
@@ -292,13 +306,13 @@ def _find_clips(words: list[dict], sig: dict, duration: float, title: str, who: 
                 "why": "Source is already short", "flags": []}
         if ai.enabled() and words:
             try:
-                clip.update(_hook_for(words, title, who))
+                clip.update(_hook_for(words, title, who, extra))
             except Exception as e:  # noqa: BLE001
                 log(f"AI hook failed: {str(e)[:160]}")
         return [clip]
     if ai.enabled() and words and focus is None:
         try:
-            clips = by_ai(words, sig, duration, title, who, n, min_len, max_len, log)
+            clips = by_ai(words, sig, duration, title, who, n, min_len, max_len, log, extra)
             if clips:
                 return clips
         except Exception as e:  # noqa: BLE001
@@ -306,7 +320,7 @@ def _find_clips(words: list[dict], sig: dict, duration: float, title: str, who: 
     if ai.enabled() and words and focus is not None:
         try:  # live: let the AI place the edges, but only around the trigger
             near = [w for w in words if focus - 45 <= w["s"] <= focus + 25]
-            clips = by_ai(near, sig, duration, title, who, n, min_len, max_len, log)
+            clips = by_ai(near, sig, duration, title, who, n, min_len, max_len, log, extra)
             if clips:
                 return clips
         except Exception as e:  # noqa: BLE001

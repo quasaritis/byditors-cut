@@ -76,6 +76,11 @@ def resolve(url: str) -> tuple[list[str], dict, dict]:
     return srcs, (parts[0].get("http_headers") or info.get("http_headers") or {}), info
 
 
+# "clip that", "clip it", "clip this", "that's a clip", "clip kar/karo/kardo/kr", "clip bana", "!clip"
+CLIP_CALL = re.compile(r"\b(clip (?:that|it|this|dat|kar\w*|kr\w*|bana\w*|le\w*)|that'?s a clip)\b|क्लिप (?:कर|बना|ले)")
+CHAT_CALL = re.compile(r"(?i)(^|\s)(!clip\b|clip (?:it|that|this|dat|kar\w*|kr\w*)|clip\s*$|clippp*\b)")
+
+
 class Session:
     def __init__(self, streamer: dict | None, url: str):
         self.streamer = streamer
@@ -94,6 +99,9 @@ class Session:
         self.chat: list[tuple[float, str]] = []
         self.last_clip_at = -1e9
         self.pending: list[float] = []
+        self.calls: list[tuple[float, str]] = []    # "clip that" moments: (time, who called it)
+        self.last_call_at = -1e9
+        self.chat_seen = 0
         self.clips = 0
         self.title = ""
         self.proc: subprocess.Popen | None = None
@@ -107,7 +115,58 @@ class Session:
         threading.Thread(target=self._record, daemon=True, name=f"rec-{self.job['id']}").start()
         threading.Thread(target=self._analyse, daemon=True, name=f"ana-{self.job['id']}").start()
         threading.Thread(target=self._chat, daemon=True, name=f"chat-{self.job['id']}").start()
+        if config.LIVE_VOICE_TRIGGER and transcribe.available():
+            threading.Thread(target=self._listen, daemon=True, name=f"ear-{self.job['id']}").start()
         return self
+
+    # ------------------------------------------------------------ "clip that"
+    def call(self, t: float, who: str):
+        """Someone asked for a clip at time t (the streamer said "clip that", or chat spammed "clip it")."""
+        if t - self.last_call_at < 30:
+            return
+        self.last_call_at = t
+        self.calls.append((t, who))
+        db.log(f"{(self.streamer or {}).get('name', 'Stream')}: {who} at {int(t // 60)}:{int(t % 60):02d}, clipping it",
+               streamer_id=(self.streamer or {}).get("id"))
+
+    def _listen(self):
+        """Listen to the live as it records and catch the streamer saying "clip that" / "clip kar"."""
+        done: set[str] = set()
+        while self.running:
+            todo = [s for s in self.segs if s["file"] not in done and s["t1"] <= self.now() + 1
+                    and (self.dir / s["file"]).exists()]
+            if len(todo) > 8:                       # fell behind: skip ahead, a late call is no use
+                for s in todo[:-3]:
+                    done.add(s["file"])
+                todo = todo[-3:]
+            for s in todo:
+                done.add(s["file"])
+                try:
+                    a = media.read_audio(self.dir / s["file"])
+                    if len(a) < media.SR or float(np.sqrt((a ** 2).mean())) < 0.01:
+                        continue
+                    tr = transcribe.transcribe(self.dir / s["file"], language=(self.streamer or {}).get("language", ""))
+                except Exception:  # noqa: BLE001
+                    continue
+                text = " ".join(w["w"] for w in tr.get("words") or []).lower()
+                if CLIP_CALL.search(text):
+                    hit = next((w for w in tr["words"] if w["w"].lower().strip(".,!?") in ("clip", "clipped")),
+                               None)
+                    self.call(s["t0"] + (hit["s"] if hit else 0.0), "said “clip that”")
+            time.sleep(2)
+
+    def _chat_calls(self):
+        """Chat spamming "clip it" means something just happened."""
+        new = self.chat[self.chat_seen:]
+        self.chat_seen = len(self.chat)
+        if not new:
+            return
+        now = new[-1][0]
+        recent = [(t, m) for t, m in self.chat[-400:] if now - t <= 12]
+        asks = [t for t, m in recent if CHAT_CALL.search(m)]
+        rate = len([1 for t, _ in self.chat[-2000:] if now - t <= 120]) / 120 * 12    # messages per 12 s
+        if len(asks) >= max(4, 0.25 * rate):
+            self.call(max(0.0, min(asks) - 4), "chat yelled “clip it”")
 
     def now(self) -> float:
         return time.time() - self.started
@@ -250,6 +309,12 @@ class Session:
                         self.pending.append(t)
                         self.last_clip_at = t
                 last_step = n
+            self._chat_calls()
+            for t, who in list(self.calls):
+                if recorded >= t + 5:
+                    self.calls.remove((t, who))
+                    self.last_clip_at = max(self.last_clip_at, t)
+                    self._cut(max(0.0, t - 60), t + 5, auto=True, focus=max(0.0, t - 8), why=f"You asked: {who}")
             for t in list(self.pending):
                 if recorded >= t + 22:
                     self.pending.remove(t)
@@ -275,7 +340,7 @@ class Session:
         lst.unlink(missing_ok=True)
         return out if out.exists() else None
 
-    def _cut(self, a: float, b: float, auto: bool, exact: bool = False, focus: float | None = None):
+    def _cut(self, a: float, b: float, auto: bool, exact: bool = False, focus: float | None = None, why: str = ""):
         def work():
             try:
                 win = self._window(a, b)
@@ -300,7 +365,8 @@ class Session:
                     if not picks:
                         return
                     pick = picks[0]
-                    pick["why"] = ("Live spike: " + pick.get("why", "")).strip()
+                    pick["why"] = ((why + ". ") if why else "Live spike: ") + pick.get("why", "")
+                    pick["why"] = pick["why"].strip()
                 pipeline.make_clip(self.job, win, pr, info, pick, tr["words"], self.streamer, cuts)
                 self.clips += 1
                 at = focus if focus is not None else a
@@ -319,7 +385,7 @@ class Session:
 
     def _trim(self):
         keep_from = self.now() - config.LIVE_BUFFER_MIN * 60
-        busy = min(self.pending, default=1e12) - 70
+        busy = min(self.pending + [t for t, _ in self.calls], default=1e12) - 70
         for s in list(self.segs):
             if s["t1"] < min(keep_from, busy):
                 (self.dir / s["file"]).unlink(missing_ok=True)

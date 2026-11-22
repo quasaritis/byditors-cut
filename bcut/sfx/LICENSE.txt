@@ -1,0 +1,11 @@
+These sound effects are by Kenney (www.kenney.nl), from the packs "Impact Sounds", "Sci-fi Sounds" and
+"Interface Sounds", released under Creative Commons Zero (CC0): http://creativecommons.org/publicdomain/zero/1.0/
+
+boom.ogg   = Sci-fi Sounds / lowFrequency_explosion_001.ogg
+hit.ogg    = Impact Sounds / impactSoft_heavy_002.ogg
+whoosh.ogg = Interface Sounds / maximize_004.ogg
+rewind.ogg = Interface Sounds / scratch_005.ogg
+pop.ogg    = Interface Sounds / drop_002.ogg
+
+To use your own sounds instead (for example from Pixabay), put files with the same names (boom, hit, whoosh,
+rewind, pop; .mp3, .wav or .ogg) in data/sfx/ next to your clips. Those are used first.

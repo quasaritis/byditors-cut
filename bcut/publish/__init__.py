@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-from .. import config, db
+from .. import config, db, learn
 from .platforms import POSTERS
 
 
@@ -153,6 +153,8 @@ def autopilot_tick(now: float | None = None) -> list[dict]:
         pool = [c for c in db.query(
             "SELECT * FROM clips WHERE created > ? ORDER BY score DESC LIMIT 300", (now - 14 * 86400,))
             if c["id"] not in done and eligible(c)]
+        # clips like the ones that got views go first (same streamer, same hook style)
+        pool.sort(key=lambda c: -((c.get("score") or 0) + learn.boost(c)))
         today = datetime.fromtimestamp(now).date()
         for day in (today, today + timedelta(days=1)):
             on_day = [t for t in taken if datetime.fromtimestamp(t).date() == day]
@@ -172,6 +174,7 @@ def autopilot_tick(now: float | None = None) -> list[dict]:
 
 def _loop():
     last_auto = 0.0
+    last_stats = time.time() - 6 * 3600 + 600          # first stats read 10 minutes after start
     while True:
         try:
             for p in db.query("SELECT * FROM posts WHERE status='scheduled' AND due <= ? ORDER BY due LIMIT 5",
@@ -180,6 +183,11 @@ def _loop():
             if time.time() - last_auto > 300:
                 last_auto = time.time()
                 autopilot_tick()
+            if time.time() - last_stats > 6 * 3600:
+                last_stats = time.time()
+                n = learn.refresh()
+                if n:
+                    db.log(f"Read the views on {n} post{'s' if n != 1 else ''}; the autopilot and hooks learn from them")
         except Exception as e:  # noqa: BLE001  never let the poster thread die
             db.log(f"Posting loop error: {str(e)[:200]}", "error")
         time.sleep(20)

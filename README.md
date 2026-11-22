@@ -18,6 +18,11 @@ This started from [PeakCut](https://github.com/haziqahmedqasmi/PeakCut) and adds
 | Streamers watched automatically | Lives | Lives **and new uploads/VODs**, with the back catalogue skipped on first add |
 | Vertical framing | Fixed layouts | **Smooth face following** that never slices a face, **facecam + gameplay split** (cam found wherever it sits, two cams side by side), **two-person stack**, blur-fill; any clip can be re-rendered in another layout |
 | Moment detection | Loudness, chat, transcript | Loudness, **audio bursts (laughs/screams)**, **scene cuts**, chat velocity with **hype-emote weighting**, transcript AI |
+| Editing | Captions, zoom | **Dead air cut** between sentences (screams and laughs kept), **cold open** on the loudest moment with a rewind, **punch-in zooms** toward the face with a shake on the biggest hit, **real CC0 sound hits** (or your own), **seamless loop** ending, **auto cover** on the biggest reaction; each one switchable |
+| Two people | Stack | Stack **or active-speaker cuts** (mouth movement + voice, hard cuts like a podcast editor, caption colour per speaker) |
+| "Clip that" | Twitch chat command | The streamer **saying** "clip that / clip it / clip kar" (Hindi too) or **chat spamming** "clip it", on Twitch and Kick |
+| Fixing a clip | – | **Trim editor** in the inbox: drag start and end over the original (15 s either side), change the hook and layout, render again |
+| Learning | – | Reads your **views, likes and comments** back from Instagram and YouTube every 6 hours: winners' streamers and hook styles post first, hook styles are **A/B tested**, the AI sees your best hooks |
 | Languages | Parakeet (English-first) | **faster-whisper**: 99 languages, Hindi and Hinglish included, GPU if available |
 | Posting | YouTube, Instagram, TikTok | + **Facebook Reels**, a last Guard check before every post, quiet hours, per-account spacing and caps |
 

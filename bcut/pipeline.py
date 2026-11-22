@@ -11,7 +11,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import brain, config, db, guard, media, reframe, render, signals, transcribe
+from . import brain, config, db, fx, guard, media, reframe, render, signals, transcribe
 
 _q: queue.Queue = queue.Queue()
 _started = False
@@ -57,18 +57,47 @@ def credit_for(streamer: dict | None, info: dict) -> str:
     return f"@{who}" if who else ""
 
 
+def produce(src: Path, out: Path, start: float, end: float, w: int, h: int, has_audio: bool, words: list[dict],
+            hook: str, credit: str, layout: str = "auto", st: dict | None = None, log=print) -> dict:
+    """Edit and render one clip: cut dead air, cold open, layout, punch-ins, sound, captions, loop.
+    Every render (new clips, a layout change, a trim from the Inbox) goes through here."""
+    st = st or fx.style()
+    edit = fx.plan(src, start, end, words, has_audio, st)
+    plain = (not edit.get("cold") and len(edit["pieces"]) == 1 and not st["loop"] and
+             abs(edit["pieces"][0][0] - start) < 0.05 and abs(edit["pieces"][0][1] - end) < 0.05)
+    work = out.with_name(out.stem + ".cut.mp4")
+    try:
+        if plain:
+            body, b0, b1, ws, built = src, start, end, words, {"dur": end - start, "rewind": None, "joins": []}
+        else:
+            built = fx.build(src, edit, work, has_audio, loop=st["loop"])
+            body, b0, b1 = work, 0.0, built["dur"]
+            ws = fx.map_words([x for x in words if start - 0.05 <= x["s"] <= end + 0.05], built["timeline"])
+        cuts = media.scene_cuts(body, start=b0, max_seconds=b1 - b0) + [b0 + j for j in built["joins"]]
+        plan = reframe.analyse(body, b0, b1, w, h, sorted(cuts), layout)
+        ev = fx.events(body, b0, b1 - b0, built, st, has_audio)
+        render.render(body, out, b0, b1, plan, w, h, ws, hook=hook, credit=credit, has_audio=has_audio, fx=ev)
+    finally:
+        work.unlink(missing_ok=True)
+    plan_info = {"mode": plan.get("mode"), "burned": bool(plan.get("burned")),
+                 "removed": edit.get("removed", 0), "cold": bool(edit.get("cold")),
+                 "punches": len(ev.get("punches") or []), "speakers": plan.get("speakers")}
+    return {"plan": plan, "edit": edit, "fx": ev, "info": plan_info, "dur": round(b1 - b0, 2)}
+
+
 def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: list[dict], streamer: dict | None,
               cuts: list[float], log=print) -> dict:
     """Render one picked moment, run it through the Guard and store it. Shared by videos and lives."""
     cid = db.new_id("c")
     out_dir = config.DATA / "clips" / job["id"]
     out = out_dir / f"{cid}.mp4"
-    plan = reframe.analyse(src, c["start"], c["end"], probe["width"], probe["height"], cuts,
-                           (streamer or {}).get("layout", "auto"))
+    out_dir.mkdir(parents=True, exist_ok=True)
     cw = transcribe.words_between(words, c["start"], c["end"])
-    render.render(src, out, c["start"], c["end"], plan, probe["width"], probe["height"], cw,
-                  hook=c.get("hook", ""), credit=credit_for(streamer, info), has_audio=probe["has_audio"])
-    thumb = render.thumbnail(out, out_dir / f"{cid}.jpg", at=min(1.5, (c["end"] - c["start"]) / 3))
+    credit = credit_for(streamer, info)
+    made = produce(src, out, c["start"], c["end"], probe["width"], probe["height"], probe["has_audio"], cw,
+                   c.get("hook", ""), credit, (streamer or {}).get("layout", "auto"), log=log)
+    plan = made["plan"]
+    thumb = cover(out, out_dir / f"{cid}.jpg", made)
     text = " ".join(w["w"] for w in cw)
     clip = {"id": cid, "job_id": job["id"], "streamer_id": job.get("streamer_id"), "title": c.get("title", ""),
             "hook": c.get("hook", ""), "start": c["start"], "end": c["end"], "score": c.get("score", 0),
@@ -77,7 +106,11 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
             "guard": {}, "verdict": "pending", "state": "new", "created": time.time()}
     report = guard.review({**clip, "file": str(out)}, streamer, info, text, _targets(streamer), c.get("flags"))
     report["layout"] = plan.get("mode")
-    report["edit"] = _edit_info(src, c, probe, cw, credit_for(streamer, info), plan)
+    report["edit"] = _edit_info(src, c, probe, transcribe.words_between(words, c["start"] - 15, c["end"] + 15),
+                                credit, plan)
+    report["made"] = made["info"]
+    report["cover_at"] = made.get("cover_at")
+    report["hook_style"] = c.get("hook_style", "")
     report["text"] = text[:4000]
     report["ai_flags"] = c.get("flags") or []
     report["own_captions"] = bool(plan.get("burned"))
@@ -91,8 +124,17 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
         if direct:
             from . import publish
             publish.enqueue(saved["id"], direct)
-    log(f"clip ready: {clip['title'] or cid} → {report['verdict'].upper()} ({plan.get('mode')}"
-        + (", kept the video's own subtitles" if plan.get("burned") else "") + ")")
+    mi = made["info"]
+    extras = [plan.get("mode")]
+    if mi["removed"] > 0.5:
+        extras.append(f"{mi['removed']:.1f}s of dead air cut")
+    if mi["cold"]:
+        extras.append("cold open")
+    if mi["punches"]:
+        extras.append(f"{mi['punches']} punch-in{'s' if mi['punches'] != 1 else ''}")
+    if plan.get("burned"):
+        extras.append("kept the video's own subtitles")
+    log(f"clip ready: {clip['title'] or cid} → {report['verdict'].upper()} ({', '.join(extras)})")
     try:
         from . import telegram
 
@@ -102,38 +144,71 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     return saved
 
 
+def cover(clip: Path, out: Path, made: dict) -> Path:
+    """The cover image: a frame on the biggest punch-in (a face mid-reaction) or, without one, the first
+    second after the hook lands. Stored as the thumbnail and used as the Instagram/TikTok cover."""
+    dur = made.get("dur") or 3.0
+    punches = (made.get("fx") or {}).get("punches") or []
+    big = [p for p in punches if p.get("shake")] or punches
+    at = (big[0]["t"] + 0.45) if big else min(1.5, dur / 3)
+    at = max(0.2, min(at, dur - 0.3))
+    made["cover_at"] = round(at, 2)
+    return render.thumbnail(clip, out, at=at)
+
+
 def _edit_info(src: Path, c: dict, probe: dict, words: list[dict], credit: str, plan: dict) -> dict:
-    """What it takes to render the clip again in another layout (Inbox → Layout)."""
+    """What it takes to render the clip again (another layout, a new trim) from the Inbox. Words cover 15 s
+    either side, so the trim can be widened."""
     return {"src": str(src), "start": c["start"], "end": c["end"], "w": probe["width"], "h": probe["height"],
             "has_audio": probe["has_audio"], "hook": c.get("hook", ""), "credit": credit,
-            "words": [{"w": w["w"], "s": round(w["s"], 2), "e": round(w["e"], 2)} for w in words][:600],
+            "words": [{"w": w["w"], "s": round(w["s"], 2), "e": round(w["e"], 2)} for w in words][:1500],
             "auto": plan.get("mode")}
 
 
-def relayout(clip_id: str, layout: str) -> dict:
-    """Render a clip again in the layout you picked (or let it decide again with "auto")."""
+def rerender(clip_id: str, layout: str | None = None, start: float | None = None, end: float | None = None,
+             hook: str | None = None, title: str | None = None) -> dict:
+    """Render a clip again: in another layout, with a new start/end, or a new hook (Inbox → Edit)."""
     clip = db.get("clips", clip_id)
+    if not clip:
+        raise RuntimeError("Clip not found")
     g = dict(clip["guard"] or {})
-    ed = g.get("edit") or {}
+    ed = dict(g.get("edit") or {})
     src = Path(ed.get("src") or "")
     if not ed or not src.exists():
         raise RuntimeError("The original video for this clip is gone (lives are kept for a day), so it can't be "
                            "rendered again.")
-    want = reframe.ALIASES.get(layout, layout)
+    want = reframe.ALIASES.get(layout or g.get("layout_choice") or "auto", layout or g.get("layout_choice") or "auto")
     if want not in reframe.LAYOUTS:
         raise RuntimeError(f"Unknown layout: {layout}")
-    cuts = media.scene_cuts(src, start=ed["start"], max_seconds=ed["end"] - ed["start"])
-    plan = reframe.analyse(src, ed["start"], ed["end"], ed["w"], ed["h"], cuts, want)
+    dur = media.probe(src)["duration"] or 1e9
+    s0 = ed["start"] if start is None else max(0.0, float(start))
+    s1 = ed["end"] if end is None else min(dur, float(end))
+    if s1 - s0 < 3:
+        raise RuntimeError("A clip needs at least 3 seconds.")
+    if s1 - s0 > 180:
+        raise RuntimeError("Keep it under 3 minutes.")
+    if hook is not None:
+        ed["hook"] = hook.strip()[:120]
+    words = [w for w in (ed.get("words") or []) if s0 - 0.05 <= w["s"] <= s1 + 0.05]
     out = Path(clip["file"])
-    tmp = out.with_name(out.stem + ".relayout.mp4")
-    render.render(src, tmp, ed["start"], ed["end"], plan, ed["w"], ed["h"], ed.get("words") or [],
-                  hook=ed.get("hook", ""), credit=ed.get("credit", ""), has_audio=ed.get("has_audio", True))
+    tmp = out.with_name(out.stem + ".redo.mp4")
+    made = produce(src, tmp, s0, s1, ed["w"], ed["h"], ed.get("has_audio", True), words, ed.get("hook", ""),
+                   ed.get("credit", ""), want)
     shutil.move(str(tmp), out)
     out.with_name(out.stem + "_tg.mp4").unlink(missing_ok=True)     # phone preview is stale now
-    render.thumbnail(out, Path(clip["thumb"]), at=min(1.5, (ed["end"] - ed["start"]) / 3))
-    g["layout"] = plan.get("mode")
-    g["layout_choice"] = want
-    return db.update("clips", clip_id, guard=g)
+    cover(out, Path(clip["thumb"]), made)
+    ed["start"], ed["end"] = s0, s1
+    g.update(edit=ed, layout=made["plan"].get("mode"), layout_choice=want, made=made["info"],
+             cover_at=made.get("cover_at"), own_captions=bool(made["plan"].get("burned")))
+    fields = {"guard": g, "start": s0, "end": s1, "hook": ed.get("hook", "")}
+    if title is not None and title.strip():
+        fields["title"] = title.strip()[:120]
+    return db.update("clips", clip_id, **fields)
+
+
+def relayout(clip_id: str, layout: str) -> dict:
+    """Render a clip again in the layout you picked (or let it decide again with "auto")."""
+    return rerender(clip_id, layout=layout)
 
 
 def run_job(jid: str) -> None:

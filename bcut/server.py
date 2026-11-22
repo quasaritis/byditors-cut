@@ -9,6 +9,7 @@ import secrets
 import shutil
 import os
 import threading
+import subprocess
 import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -16,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import ai, config, db, guard, live, media, pipeline, publish, radar, reframe, telegram, tools, transcribe, winsys
+from . import ai, config, db, fx, guard, live, media, pipeline, publish, radar, reframe, telegram, tools, transcribe, winsys
 from .guard import music, rules
 from .publish import platforms
 
@@ -92,8 +93,16 @@ def _clip_public(c: dict) -> dict:
             "duration": round(c["end"] - c["start"], 1),
             "guard": {k: v for k, v in g.items() if k not in ("text", "edit")},
             "can_relayout": bool((g.get("edit") or {}).get("src")) and Path((g.get("edit") or {}).get("src")).exists(),
+            "window": _window(g.get("edit") or {}),
             "transcript": g.get("text", "")[:1500],
             "streamer": (db.get("streamers", c["streamer_id"]) or {}).get("name") if c.get("streamer_id") else None}
+
+
+def _window(ed: dict) -> dict | None:
+    if not ed.get("src"):
+        return None
+    w0 = max(0.0, float(ed["start"]) - 15)
+    return {"from": w0, "to": float(ed["end"]) + 15, "start": ed["start"], "end": ed["end"], "hook": ed.get("hook", "")}
 
 
 @app.get("/api/state")
@@ -279,6 +288,66 @@ def clip_layout(cid: str, b: dict = Depends(_body)):
         return _clip_public(pipeline.relayout(cid, str(b.get("layout") or "auto")))
     except RuntimeError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/clips/{cid}/edit")
+def clip_edit(cid: str, b: dict = Depends(_body)):
+    """The trim editor: new start/end (seconds in the original video), hook, title and layout, then render."""
+    _need("clips", cid)
+    num = lambda k: float(b[k]) if b.get(k) not in (None, "") else None  # noqa: E731
+    try:
+        return _clip_public(pipeline.rerender(cid, layout=b.get("layout") or None, start=num("start"), end=num("end"),
+                                              hook=b.get("hook"), title=b.get("title")))
+    except (RuntimeError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/media/source/{cid}.mp4")
+def clip_source(cid: str):
+    """A light preview of the original around the clip (15 s either side), for the trim editor."""
+    c = _need("clips", cid)
+    ed = (c.get("guard") or {}).get("edit") or {}
+    src = Path(ed.get("src") or "")
+    if not src.exists():
+        raise HTTPException(404, "The original video is gone")
+    w0 = max(0.0, float(ed["start"]) - 15)
+    w1 = float(ed["end"]) + 15
+    out = Path(c["file"]).with_name(f"{cid}_src_{int(w0 * 10)}_{int(w1 * 10)}.mp4")
+    if not out.exists():
+        for old in Path(c["file"]).parent.glob(f"{cid}_src_*.mp4"):
+            old.unlink(missing_ok=True)
+        subprocess.run([media.need("ffmpeg"), "-v", "error", "-y", "-ss", f"{w0:.3f}", "-t", f"{w1 - w0:.3f}",
+                        "-i", str(src), "-vf", "scale=-2:360", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+                        "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(out)], check=False)
+    if not out.exists():
+        raise HTTPException(500, "Couldn't make the preview")
+    return FileResponse(out, media_type="video/mp4")
+
+
+@app.get("/api/learn")
+def learned():
+    from . import learn
+
+    rs = learn.results()
+    return {"posts": len(rs), "styles": learn.style_stats(), "labels": learn.STYLES, "top_hooks": learn.top_hooks(),
+            "views": sum(r["views"] for r in rs)}
+
+
+@app.post("/api/learn/refresh")
+def learn_refresh():
+    from . import learn
+
+    return {"updated": learn.refresh()}
+
+
+@app.get("/api/edit-style")
+def edit_style():
+    return {"style": fx.style(), "labels": fx.LABELS}
+
+
+@app.post("/api/edit-style")
+def save_edit_style(b: dict = Depends(_body)):
+    return {"style": fx.set_style(b), "labels": fx.LABELS}
 
 
 @app.get("/api/layouts")

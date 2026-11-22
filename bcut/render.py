@@ -18,6 +18,7 @@ from .media import need
 
 FONTS = Path(__file__).with_name("fonts")
 HIGHLIGHT = "&H0000E1FF"   # ASS colours are &HAABBGGRR -> #FFE100, a warm yellow
+HIGHLIGHT_B = "&H00FFD23C"  # second speaker: #3CD2FF, a clear sky blue
 WHITE = "&H00FFFFFF"
 INK = "&H00000000"
 
@@ -185,6 +186,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         y = _place(spots["cap"], g0, g_end - start, half_h, half_w,
                    faces + (hook_box if g0 < hook_hold + 0.2 else []), prev)
         prev = y
+        lit_c = HIGHLIGHT
+        for t0, t1, who in plan.get("speakers") or []:
+            if t0 <= g0 + 0.05 < t1:
+                lit_c = HIGHLIGHT_B if who == "b" else HIGHLIGHT
+                break
         for i, w in enumerate(g):
             s = w["s"] - start
             e = (g[i + 1]["s"] if i + 1 < len(g) else g_end) - start
@@ -193,7 +199,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             parts = []
             for j, x in enumerate(g):
                 word = _clean(x["w"])
-                lit = f"{{\\c{HIGHLIGHT}}}{word}{{\\c{WHITE}}}" if j == i else word
+                lit = f"{{\\c{lit_c}}}{word}{{\\c{WHITE}}}" if j == i else word
                 if parts and word[:1] in "'’":
                     parts[-1] += lit
                 else:
@@ -207,11 +213,29 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return head + "\n".join(ev) + "\n"
 
 
+def _face_centre(plan: dict):
+    """Where to push in at time t: the biggest face on screen then (as a share of the frame), else the middle."""
+    faces = plan.get("faces_out") or []
+
+    def at(t: float) -> tuple[float, float]:
+        near = [f for f in faces if abs(f[0] - t) <= 0.4]
+        if not near:
+            return 0.5, 0.42
+        f = max(near, key=lambda f: (f[3] - f[1]) * (f[4] - f[2]))
+        return (min(0.9, max(0.1, (f[1] + f[3]) / 2 / 1080)), min(0.85, max(0.1, (f[2] + f[4]) / 2 / 1920)))
+    return at
+
+
 def render(src: Path, out: Path, start: float, end: float, plan: dict, src_w: int, src_h: int,
-           words: list[dict], hook: str = "", credit: str = "", has_audio: bool = True) -> Path:
-    """Render one clip. Works in a short temporary folder so Windows path limits and filter escaping can't bite."""
+           words: list[dict], hook: str = "", credit: str = "", has_audio: bool = True,
+           fx: dict | None = None) -> Path:
+    """Render one clip. Works in a short temporary folder so Windows path limits and filter escaping can't bite.
+    `fx` adds punch-ins ({"punches": [...]}) and sound hits ({"sounds": [...]}) from bcut.fx."""
+    from . import fx as fxmod
+
     out.parent.mkdir(parents=True, exist_ok=True)
     dur = end - start
+    fx = fx or {}
     with tempfile.TemporaryDirectory(prefix="bcut") as td:
         work = Path(td)
         fonts = work / "fonts"
@@ -223,17 +247,34 @@ def render(src: Path, out: Path, start: float, end: float, plan: dict, src_w: in
         moves = reframe.commands(plan, dur, src_w, src_h)
         if moves:
             (work / "moves.txt").write_text(moves, encoding="utf-8")
+        zoom = fxmod.zoom_filter(fx.get("punches") or [], _face_centre(plan))
         graph = (reframe.filter_graph(plan, src_w, src_h, has_cmds=bool(moves)) +
-                 ";[v]subtitles=subs.ass:fontsdir=fonts,fps=30,format=yuv420p[vo]")
+                 ";[v]" + (zoom + "," if zoom else "") + "subtitles=subs.ass:fontsdir=fonts,fps=30,format=yuv420p[vo]")
         cmd = [need("ffmpeg"), "-v", "error", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}",
-               "-i", str(src.resolve()), "-filter_complex", graph, "-map", "[vo]"]
+               "-i", str(src.resolve())]
+        sounds = [s for s in (fx.get("sounds") or []) if s["t"] < dur - 0.1 and fxmod.sound(s["name"])]
         if has_audio:
+            for snd in sounds:
+                cmd += ["-i", str(fxmod.sound(snd["name"]))]
             fade_out = max(0.0, dur - 0.25)
-            cmd += ["-map", "0:a:0", "-af", f"afade=t=in:d=0.06,afade=t=out:st={fade_out:.3f}:d=0.25,"
-                                           "loudnorm=I=-14:TP=-1.5:LRA=11",
-                    "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
+            chain = f"[0:a:0]afade=t=in:d=0.06,afade=t=out:st={fade_out:.3f}:d=0.25,aresample=48000[voice]"
+            mix = ["[voice]"]
+            for i, snd in enumerate(sounds, start=1):
+                ms = int(snd["t"] * 1000)
+                chain += (f";[{i}:a]aresample=48000,aformat=channel_layouts=stereo,adelay={ms}|{ms},"
+                          f"volume={snd['db']}dB[s{i}]")
+                mix.append(f"[s{i}]")
+            if len(mix) > 1:
+                chain += ";" + "".join(mix) + f"amix=inputs={len(mix)}:normalize=0:duration=first[mixed]"
+            else:
+                chain += ";[voice]anull[mixed]"
+            chain += ";[mixed]loudnorm=I=-14:TP=-1.5:LRA=11[ao]"
+            graph += ";" + chain
+        cmd += ["-filter_complex", graph, "-map", "[vo]"]
+        if has_audio:
+            cmd += ["-map", "[ao]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
         cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-movflags",
-                "+faststart", "tmp.mp4"]
+                "+faststart", "-t", f"{dur:.3f}", "tmp.mp4"]
         p = subprocess.run(cmd, cwd=work, capture_output=True, text=True)
         if p.returncode != 0:
             raise RuntimeError("Render failed: " + " | ".join(p.stderr.strip().splitlines()[-4:]))
