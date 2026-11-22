@@ -80,6 +80,7 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     report["edit"] = _edit_info(src, c, probe, cw, credit_for(streamer, info), plan)
     report["text"] = text[:4000]
     report["ai_flags"] = c.get("flags") or []
+    report["own_captions"] = bool(plan.get("burned"))
     clip["guard"] = report
     clip["verdict"] = report["verdict"]
     saved = db.insert("clips", clip)
@@ -90,7 +91,8 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
         if direct:
             from . import publish
             publish.enqueue(saved["id"], direct)
-    log(f"clip ready: {clip['title'] or cid} → {report['verdict'].upper()} ({plan.get('mode')})")
+    log(f"clip ready: {clip['title'] or cid} → {report['verdict'].upper()} ({plan.get('mode')}"
+        + (", kept the video's own subtitles" if plan.get("burned") else "") + ")")
     try:
         from . import telegram
 

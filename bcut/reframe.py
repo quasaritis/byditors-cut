@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import media
+from . import media, textscan
 
 OUT_W, OUT_H = 1080, 1920
 FPS = 30
@@ -390,17 +390,27 @@ def analyse(src: Path, start: float, end: float, src_w: int, src_h: int, cuts: l
     ts = np.array([t - start for t, _ in shots])
     imgs = [img for _, img in shots]
     dets = [_faces(img, det) for img in imgs]
-    plan = _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want)
+    text = textscan.scan(imgs, list(ts))
+    plan = _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text)
     plan["faces"] = round(sum(1 for d in dets if d) / len(dets), 2)
     plan["faces_out"] = _project(plan, ts, dets, src_w, src_h)
+    # text already in the picture: its own subtitles mean we add none; any text is kept clear of
+    by_t: dict[float, list] = {}
+    for t, x, y, w, h in text.get("text") or []:
+        by_t.setdefault(t, []).append((x, y, w, h))
+    plan["text_out"] = _project(plan, list(by_t), list(by_t.values()), src_w, src_h)
+    plan["burned"] = bool(text.get("captions"))
     return plan
 
 
-def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want) -> dict:
+def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text=None) -> dict:
     if src_h >= src_w * 1.2:
         return {"mode": "fit"}
     if want in ("center", "wide"):
         return {"mode": want}
+    if want == "auto" and (text or {}).get("captions") and (text or {}).get("width", 0) > 0.9 * (src_h * 9 / 16) / src_w:
+        # the video has its own subtitles, wider than a vertical crop: cropping would slice them, keep it whole
+        return {"mode": "wide"}
     share = sum(1 for d in dets if d) / len(dets)
     cw = (src_h * 9 / 16) / src_w            # a full-height 9:16 window, as a share of the width
     rel_cuts = [c - start for c in (cuts or []) if start + 0.3 < c < end - 0.3]

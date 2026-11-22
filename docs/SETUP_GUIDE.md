@@ -73,6 +73,16 @@ writes a hook and a caption for each platform, and flags risky moments. Google's
 
 Other services work the same way: OpenAI, Groq, OpenRouter, Grok, Claude, or Ollama running on your PC.
 
+**If the free Gemini key is slow.** At busy times Google's free tier can take two minutes or more to answer. The app
+waits up to five minutes and then falls back to picking by loudness, so clips still come out, but without AI
+hooks. If the Activity log keeps saying *"AI pick failed"*, switch to **Groq**: also free, and it answers in a few
+seconds. Get a key at **https://console.groq.com/keys**, choose **Service: Groq**, paste it, press **Find models**,
+pick the biggest model in the list (for example `llama-3.3-70b-versatile`) and press **Save and test**.
+
+**Videos that already have subtitles.** If you clip an already-edited short or a video with its own subtitles,
+Byditors Cut sees them and doesn't add a second set on top. It keeps the video's own subtitles and only adds the
+hook, placed where it doesn't cover any text or face.
+
 ---
 
 ## 4. Captions and music removal

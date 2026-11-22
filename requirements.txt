@@ -12,6 +12,7 @@ websockets>=13
 # recommended: speech to text on your PC (captions, Hindi/Hinglish, smarter picks)
 indic-transliteration>=2.3  # Hindi captions in Hinglish (Roman letters), offline
 faster-whisper>=1.1
+onnxruntime>=1.17
 
 # optional: removes background music from clips but keeps the voice (big download, uses PyTorch)
 # demucs>=4.0

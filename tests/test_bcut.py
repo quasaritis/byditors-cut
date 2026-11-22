@@ -544,3 +544,20 @@ def test_moving_the_app_folder_keeps_clips_working():
     assert c["file"] == str(config.DATA) + "\\clips\\j\\a.mp4"
     assert c["guard"]["edit"]["src"].startswith(str(config.DATA))
     assert db.rebase_paths() == 0
+
+
+def test_videos_with_their_own_subtitles_get_none_of_ours(video, tmp_path):
+    """A clip of an already-subtitled video keeps its subtitles and gets no second set on top."""
+    from bcut import media, reframe, render, textscan
+    pr = probe(video)
+    words = [{"w": w, "s": 10.3 + i * 0.45, "e": 10.7 + i * 0.45}
+             for i, w in enumerate("so we went there and nobody knew what was going on at all honestly bro".split())]
+    subbed = render.render(video, tmp_path / "subbed.mp4", 10, 16, {"mode": "fit"}, pr["width"], pr["height"], words)
+    shots = media.frames(subbed, [0.5 + i * 0.25 for i in range(20)], width=640)
+    assert textscan.scan([i for _, i in shots], [t for t, _ in shots])["captions"]
+    plain = media.frames(video, [10.5 + i * 0.25 for i in range(20)], width=640)
+    assert not textscan.scan([i for _, i in plain], [t for t, _ in plain])["captions"]
+    ass = render.build_ass(words, 10, 16, "", "", {"mode": "fit", "burned": True, "faces_out": [], "text_out": []})
+    assert "Style: Cap" in ass and "Dialogue: 1," not in ass
+    plan = reframe.analyse(subbed, 0, 6, 1080, 1920, [], "auto")
+    assert plan["burned"] and plan["mode"] == "fit"

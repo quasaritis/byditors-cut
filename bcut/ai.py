@@ -92,15 +92,26 @@ def list_models(provider: str, key: str, base_url: str = "") -> list[str]:
 def ask_json(system: str, user: str, max_tokens: int = 2500, temperature: float = 0.4):
     """Ask for a JSON answer. Free tiers allow only a few requests a minute, so a "too many requests" answer is
     waited out and retried. Raises on failure so the caller can fall back to the no-AI path."""
+    import time
     for attempt in range(4):
         try:
             return _ask_json(system, user, max_tokens, temperature)
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (429, 503) and attempt < 3:
-                import time
+            if e.response.status_code in (429, 500, 503) and attempt < 3:
                 time.sleep(float(e.response.headers.get("retry-after") or 0) or 15 * (attempt + 1))
                 continue
             raise
+        except httpx.TimeoutException:
+            if attempt < 1:           # a free tier can be very slow at busy times: one more go, then give up
+                continue
+            raise RuntimeError(f"{settings()['provider']} took longer than {_timeout()} seconds to answer")
+
+
+def _timeout() -> int:
+    """How long to wait for one answer. Google's free Gemini tier can take one to three minutes at busy times;
+    paid and fast services answer in seconds."""
+    prov = settings()["provider"]
+    return 300 if prov in ("gemini", "ollama", "openrouter") else 150
 
 
 def _ask_json(system: str, user: str, max_tokens: int, temperature: float):
@@ -111,7 +122,7 @@ def _ask_json(system: str, user: str, max_tokens: int, temperature: float):
     model = s["model"] or PROVIDERS.get(prov, ("", "", ""))[2]
     if prov == "anthropic":
         r = httpx.post(
-            f"{PROVIDERS['anthropic'][1]}/messages", timeout=120,
+            f"{PROVIDERS['anthropic'][1]}/messages", timeout=_timeout(),
             headers={"x-api-key": s["key"], "anthropic-version": "2023-06-01", "content-type": "application/json"},
             json={"model": model, "max_tokens": max_tokens, "temperature": temperature, "system": system,
                   "messages": [{"role": "user", "content": user + "\n\nAnswer with JSON only."}]},
@@ -129,7 +140,9 @@ def _ask_json(system: str, user: str, max_tokens: int, temperature: float):
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     if prov in ("openai", "groq", "openrouter", "xai", "gemini"):
         body["response_format"] = {"type": "json_object"}
-    r = httpx.post(f"{base.rstrip('/')}/chat/completions", headers=headers, json=body, timeout=120)
+    if prov == "gemini" and re.search(r"gemini-(2\.5|[3-9])", model):
+        body["reasoning_effort"] = "low"      # picking clips needs judgement, not long deliberation: faster
+    r = httpx.post(f"{base.rstrip('/')}/chat/completions", headers=headers, json=body, timeout=_timeout())
     r.raise_for_status()
     return _json_from(r.json()["choices"][0]["message"]["content"])
 

@@ -135,7 +135,8 @@ def build_ass(words: list[dict], start: float, end: float, hook: str, credit: st
         spots, faces = {"cap": int(plan or 1300), "hook": 330}, []
         plan = {}
     else:
-        spots, faces = reframe.text_spots(plan, src_w, src_h), plan.get("faces_out") or []
+        # faces and any text already in the picture are both kept clear of
+        spots, faces = reframe.text_spots(plan, src_w, src_h), (plan.get("faces_out") or []) + (plan.get("text_out") or [])
     font = config.CAPTION_FONT
     size, ratio = _metrics(font)
     hook_size = int(size * 0.78)
@@ -171,7 +172,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         # captions keep clear of the hook while it is up (treated like one more face)
         hook_box = [[t, int(540 - hw), int(hy - hh), int(540 + hw), int(hy + hh)] for t in (0.0, hold / 2, hold)]
     prev = None
-    for g in _groups([w for w in words if start - 0.05 <= w["s"] < end], size, ratio):
+    # the source already has its own subtitles: ours on top would read twice and look broken
+    spoken = [] if plan.get("burned") else [w for w in words if start - 0.05 <= w["s"] < end]
+    for g in _groups(spoken, size, ratio):
         g_end = min(g[-1]["e"] + 0.2, end)
         g = [x for x in g if _clean(x["w"])]
         if not g:
