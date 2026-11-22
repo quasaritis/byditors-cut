@@ -451,7 +451,7 @@ def _save_account(platform: str, res: dict) -> dict:
 @app.post("/api/accounts/instagram")
 def connect_ig(b: dict = Depends(_body)):
     try:
-        res = platforms.ig_connect(str(b.get("token", "")).strip(), b.get("host") or "graph.instagram.com")
+        res = platforms.ig_connect(str(b.get("token", "")).strip(), b.get("host") or "", str(b.get("username") or ""))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"Instagram didn't accept that token: {str(e)[:200]}")
     return _save_account("instagram", res)

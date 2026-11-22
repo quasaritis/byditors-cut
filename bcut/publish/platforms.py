@@ -38,11 +38,41 @@ def ig_host(account: dict) -> str:
     return account["secrets"].get("host") or "graph.instagram.com"
 
 
-def ig_connect(token: str, host: str = "graph.instagram.com") -> dict:
-    me = _check(httpx.get(f"https://{host}/{V}/me", params={"fields": "user_id,username", "access_token": token}))
-    uid = me.get("user_id") or me.get("id")
-    return {"name": "@" + me.get("username", uid), "secrets": {"token": token, "user_id": uid, "host": host,
-                                                               "refreshed": time.time()}}
+def ig_connect(token: str, host: str = "", username: str = "") -> dict:
+    """Two kinds of token work:
+    - an Instagram-login token (starts with "IG"), used on graph.instagram.com;
+    - a Facebook token (user or Page, starts with "EAA") for a Page that has the Instagram account linked, used
+      on graph.facebook.com. A user token is swapped for that Page's own token, which doesn't expire when the
+      user token was a long-lived one."""
+    host = host or ("graph.instagram.com" if token.startswith("IG") else "graph.facebook.com")
+    if host == "graph.instagram.com":
+        me = _check(httpx.get(f"https://{host}/{V}/me", params={"fields": "user_id,username", "access_token": token}))
+        uid = me.get("user_id") or me.get("id")
+        return {"name": "@" + me.get("username", uid), "secrets": {"token": token, "user_id": uid, "host": host,
+                                                                   "refreshed": time.time()}}
+    fields = "id,name,access_token,instagram_business_account{id,username}"
+    pages = []
+    try:
+        pages = _check(httpx.get(f"https://{host}/{V}/me/accounts", params={"fields": fields, "access_token": token,
+                                                                          "limit": 100})).get("data", [])
+    except RuntimeError:
+        pass                                  # a Page token has no /me/accounts: it is the page itself
+    if not pages:
+        me = _check(httpx.get(f"https://{host}/{V}/me", params={"fields": "id,name,instagram_business_account"
+                                                                          "{id,username}", "access_token": token}))
+        pages = [{**me, "access_token": token}]
+    linked = [p for p in pages if p.get("instagram_business_account")]
+    if username:
+        want = username.lstrip("@").lower()
+        linked = [p for p in linked if p["instagram_business_account"].get("username", "").lower() == want] or linked
+    if not linked:
+        raise RuntimeError("None of your Facebook Pages has an Instagram account linked. In the Instagram app: "
+                           "Edit profile → Page → connect your Facebook Page, then try again.")
+    pg = linked[0]
+    ig = pg["instagram_business_account"]
+    return {"name": "@" + ig.get("username", ig["id"]),
+            "secrets": {"token": pg.get("access_token") or token, "user_id": ig["id"], "host": host,
+                        "page_id": pg.get("id"), "refreshed": time.time()}}
 
 
 def ig_refresh(account: dict) -> None:

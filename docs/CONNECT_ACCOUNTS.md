@@ -15,6 +15,19 @@ Needs an Instagram **Professional** account (Creator or Business). Switch for fr
 
 Tokens last 60 days; Byditors Cut renews them automatically. Docs: [Content publishing](https://developers.facebook.com/docs/instagram-platform/content-publishing).
 
+**If Instagram login won't work** (newer Meta apps only offer "Unified login", which needs a business portfolio, or the
+Instagram approval on your phone keeps spinning), go through Facebook instead:
+
+1. Create a Facebook Page (facebook.com/pages/create) and, in the Instagram app, link it: **Edit profile → Page →
+   connect** that Page.
+2. In the [Graph API Explorer](https://developers.facebook.com/tools/explorer/) pick your app, **Get User Access
+   Token** with `pages_show_list`, `pages_read_engagement`, `business_management`, `instagram_basic` and
+   `instagram_content_publish`, and approve it.
+3. Make it long-lived: open the token in the [Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken/)
+   and press **Extend Access Token**.
+4. Paste that token (it starts with `EAA`) in **Accounts → Instagram Reels**. Byditors Cut finds the Instagram account
+   linked to your Page and keeps the Page's own token, which doesn't expire.
+
 ## YouTube Shorts
 
 1. [console.cloud.google.com](https://console.cloud.google.com) → new project → **APIs & Services → Library** → enable **YouTube Data API v3**.

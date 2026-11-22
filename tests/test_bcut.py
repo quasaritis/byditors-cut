@@ -406,7 +406,7 @@ def test_many_accounts_per_platform_and_no_duplicates(monkeypatch):
     for a in db.query("SELECT id FROM accounts WHERE platform='instagram'"):
         db.delete("accounts", a["id"])
     who = {"t1": ("111", "one"), "t2": ("222", "two")}
-    monkeypatch.setattr(platforms, "ig_connect", lambda tok, host="graph.instagram.com": {
+    monkeypatch.setattr(platforms, "ig_connect", lambda tok, host="", username="": {
         "name": "@" + who[tok][1], "secrets": {"token": tok, "user_id": who[tok][0], "host": host}})
     a1 = c.post("/api/accounts/instagram", json={"token": "t1"}).json()
     a2 = c.post("/api/accounts/instagram", json={"token": "t2"}).json()
@@ -509,3 +509,22 @@ def test_facecam_found_on_gameplay_not_on_a_still_room(tmp_path):
     cams = reframe.find_cams(dets, game)
     assert cams and abs(cams[0]["box"][0] - 20 / 640) < 0.02 and abs(cams[0]["box"][3] - 110 / 360) < 0.03
     assert reframe.find_cams(dets, room) == []
+
+
+def test_instagram_through_a_facebook_page(monkeypatch):
+    """A Facebook token finds the Instagram account linked to a Page and keeps the Page's own token."""
+    import httpx
+    from bcut.publish import platforms
+
+    def fake_get(url, params=None, **kw):
+        req = httpx.Request("GET", url)
+        if url.endswith("/me/accounts"):
+            return httpx.Response(200, request=req, json={"data": [
+                {"id": "p1", "name": "Other", "access_token": "EAApage1"},
+                {"id": "p2", "name": "GTA Final Boss Clipper", "access_token": "EAApage2",
+                 "instagram_business_account": {"id": "1789", "username": "gtafinalbossclipper"}}]})
+        return httpx.Response(400, request=req, json={"error": {"message": "nope"}})
+    monkeypatch.setattr(platforms.httpx, "get", fake_get)
+    res = platforms.ig_connect("EAAuser")
+    assert res["name"] == "@gtafinalbossclipper"
+    assert res["secrets"] == {**res["secrets"], "token": "EAApage2", "user_id": "1789", "host": "graph.facebook.com"}
