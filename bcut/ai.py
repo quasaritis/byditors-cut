@@ -97,6 +97,9 @@ def ask_json(system: str, user: str, max_tokens: int = 2500, temperature: float 
         try:
             return _ask_json(system, user, max_tokens, temperature)
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400 and "json_validate_failed" in e.response.text and attempt < 2:
+                max_tokens = max(800, max_tokens * 2)     # a reasoning model ran out of room before the JSON
+                continue
             if e.response.status_code in (429, 500, 503) and attempt < 3:
                 time.sleep(float(e.response.headers.get("retry-after") or 0) or 15 * (attempt + 1))
                 continue

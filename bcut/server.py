@@ -590,7 +590,7 @@ def save_ai(b: dict = Depends(_body)):
     db.kv_set("ai", cur)
     if b.get("test"):
         try:
-            ai.ask_json("Reply with JSON.", 'Return {"ok": true}', max_tokens=20)
+            ai.ask_json("Reply with JSON.", 'Return {"ok": true}', max_tokens=400)   # room for reasoning models
         except Exception as e:  # noqa: BLE001
             raise HTTPException(400, f"Saved, but the test failed: {str(e)[:200]}")
     return ai.public_settings()
