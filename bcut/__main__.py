@@ -71,6 +71,9 @@ def main() -> None:
         sys.exit("ffmpeg isn't installed (or not on PATH). Install it first: https://ffmpeg.org/download.html")
     config.ensure_dirs()
     db.conn()
+    moved = db.rebase_paths()          # the app folder was moved: point saved clips at the new place
+    if moved:
+        db.log(f"App folder moved: updated {moved} saved file paths to {config.DATA}")
     db.kv_set("started_at", time.time())
     start_background()
     threading.Thread(target=_sync_requirements, daemon=True, name="requirements").start()

@@ -528,3 +528,19 @@ def test_instagram_through_a_facebook_page(monkeypatch):
     res = platforms.ig_connect("EAAuser")
     assert res["name"] == "@gtafinalbossclipper"
     assert res["secrets"] == {**res["secrets"], "token": "EAApage2", "user_id": "1789", "host": "graph.facebook.com"}
+
+
+def test_moving_the_app_folder_keeps_clips_working():
+    """Stored paths from the old folder are rewritten to the current data folder on start."""
+    from bcut import config, db
+    old = "C:\\Users\\X\\Downloads\\byditors-cut\\data"
+    cid = db.new_id("c")
+    db.insert("clips", {"id": cid, "job_id": "j", "title": "t", "start": 0, "end": 1,
+                        "file": old + "\\clips\\j\\a.mp4", "thumb": old + "\\clips\\j\\a.jpg",
+                        "guard": {"edit": {"src": old + "\\sources\\j\\source.mp4"}}, "created": 0})
+    db.kv_set("data_dir", old)
+    assert db.rebase_paths() >= 1
+    c = db.get("clips", cid)
+    assert c["file"] == str(config.DATA) + "\\clips\\j\\a.mp4"
+    assert c["guard"]["edit"]["src"].startswith(str(config.DATA))
+    assert db.rebase_paths() == 0

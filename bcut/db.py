@@ -5,6 +5,7 @@ Rows are plain dicts; JSON columns (names ending in `_json`) are decoded on the 
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -205,3 +206,55 @@ def kv_set(k: str, v) -> None:
     with _lock:
         conn().execute("INSERT INTO kv (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",
                        (k, json.dumps(v)))
+
+
+def _guess_old_data_dir() -> str | None:
+    for (f,) in conn().execute("SELECT file FROM clips WHERE file != '' LIMIT 50"):
+        m = re.match(r"^(.*[\\/]data)(?=[\\/])", f or "")
+        if m:
+            return m.group(1)
+    return None
+
+
+def rebase_paths() -> int:
+    """The app folder was moved (say from Downloads to Videos): every stored file path still points at the old
+    place. Rewrite them to the current data folder. Returns how many rows changed."""
+    new = str(config.DATA)
+    old = kv_get("data_dir") or _guess_old_data_dir()
+    if not old or old == new:
+        kv_set("data_dir", new)
+        return 0
+
+    def fix(v):
+        if isinstance(v, str):
+            return new + v[len(old):] if v.startswith(old) else v
+        if isinstance(v, list):
+            return [fix(x) for x in v]
+        if isinstance(v, dict):
+            return {k: fix(x) for k, x in v.items()}
+        return v
+
+    changed = 0
+    c = conn()
+    for (table,) in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+        cols = [r[1] for r in c.execute(f"PRAGMA table_info({table})")]
+        if "rowid" in cols:
+            continue
+        for row in c.execute(f"SELECT rowid, * FROM {table}").fetchall():
+            upd = {}
+            for k in cols:
+                v = row[k]
+                if not isinstance(v, str) or old not in v.replace("\\\\", "\\"):
+                    continue
+                if k.endswith("_json"):
+                    nv = json.dumps(fix(json.loads(v)), ensure_ascii=False)
+                else:
+                    nv = fix(v)
+                if nv != v:
+                    upd[k] = nv
+            if upd:
+                c.execute(f"UPDATE {table} SET " + ", ".join(f"{k}=?" for k in upd) + " WHERE rowid=?",
+                          (*upd.values(), row["rowid"]))
+                changed += 1
+    kv_set("data_dir", new)
+    return changed
