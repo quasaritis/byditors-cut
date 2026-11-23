@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import brain, config, db, media, pipeline, signals, transcribe
+from . import brain, campaigns, config, db, media, pipeline, signals, transcribe
 
 _sessions: dict[str, "Session"] = {}
 _lock = threading.Lock()
@@ -418,10 +418,14 @@ class Session:
                             "flags": []}
                 else:
                     sig = signals.combined(media.read_audio(win), cuts, chat)
+                    camp = campaigns.for_job(self.job, self.streamer)
+                    lo, hi = campaigns.lengths(camp, config.CLIP_MIN, min(config.CLIP_MAX, 50))
                     picks = brain.find_clips(tr["words"], sig, pr["duration"], self.title,
                                              (self.streamer or {}).get("name", ""), n=1,
-                                             min_len=config.CLIP_MIN, max_len=min(config.CLIP_MAX, 50),
-                                             focus=None if focus is None else focus - a)
+                                             min_len=lo, max_len=hi,
+                                             focus=None if focus is None else focus - a,
+                                             lang=pipeline.caption_lang(self.job, self.streamer),
+                                             brief=campaigns.rules_of(camp)["notes"] if camp else "")
                     if not picks:
                         return
                     pick = picks[0]

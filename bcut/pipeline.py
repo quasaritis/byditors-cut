@@ -11,7 +11,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import brain, config, db, fx, guard, media, reframe, render, signals, transcribe
+from . import brain, campaigns, config, db, fx, guard, media, reframe, render, signals, transcribe
 
 _q: queue.Queue = queue.Queue()
 _started = False
@@ -58,7 +58,8 @@ def credit_for(streamer: dict | None, info: dict) -> str:
 
 
 def produce(src: Path, out: Path, start: float, end: float, w: int, h: int, has_audio: bool, words: list[dict],
-            hook: str, credit: str, layout: str = "auto", st: dict | None = None, log=print) -> dict:
+            hook: str, credit: str, layout: str = "auto", st: dict | None = None, log=print,
+            callout: str = "") -> dict:
     """Edit and render one clip: cut dead air, cold open, layout, punch-ins, sound, captions, loop.
     Every render (new clips, a layout change, a trim from the Inbox) goes through here."""
     st = st or fx.style()
@@ -76,13 +77,24 @@ def produce(src: Path, out: Path, start: float, end: float, w: int, h: int, has_
         cuts = media.scene_cuts(body, start=b0, max_seconds=b1 - b0) + [b0 + j for j in built["joins"]]
         plan = reframe.analyse(body, b0, b1, w, h, sorted(cuts), layout)
         ev = fx.events(body, b0, b1 - b0, built, st, has_audio)
-        render.render(body, out, b0, b1, plan, w, h, ws, hook=hook, credit=credit, has_audio=has_audio, fx=ev)
+        if built.get("freeze"):
+            ev["callout"] = {"text": callout or fx.default_callout(hook), "at": built["freeze"]}
+        render.render(body, out, b0, b1, plan, w, h, ws, hook=hook, credit=credit, has_audio=has_audio, fx=ev,
+                      grade=st.get("original", False))
     finally:
         work.unlink(missing_ok=True)
     plan_info = {"mode": plan.get("mode"), "burned": bool(plan.get("burned")),
                  "removed": edit.get("removed", 0), "cold": bool(edit.get("cold")),
                  "punches": len(ev.get("punches") or []), "speakers": plan.get("speakers")}
     return {"plan": plan, "edit": edit, "fx": ev, "info": plan_info, "dur": round(b1 - b0, 2)}
+
+
+def caption_lang(job: dict, streamer: dict | None) -> str:
+    """"english" (translate captions, hook and title) or "auto" (as spoken: Hinglish stays Hinglish)."""
+    pick = (job.get("meta") or {}).get("captions") or "auto"
+    if pick == "auto":
+        pick = (streamer or {}).get("captions") or "auto"
+    return "english" if pick == "english" else "auto"
 
 
 def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: list[dict], streamer: dict | None,
@@ -92,21 +104,38 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     out_dir = config.DATA / "clips" / job["id"]
     out = out_dir / f"{cid}.mp4"
     out_dir.mkdir(parents=True, exist_ok=True)
+    camp = campaigns.for_job(job, streamer)
+    lang = caption_lang(job, streamer)
     # the clip plus 15 s either side (for the trim editor), with Hindi/Hinglish spelling fixed once
     near = brain.fix_spellings(transcribe.words_between(words, c["start"] - 15, c["end"] + 15), log)
+    spoken = " ".join(w["w"] for w in transcribe.words_between(near, c["start"], c["end"]))
+    if lang == "english":
+        near = brain.to_english(near, log)
     cw = transcribe.words_between(near, c["start"], c["end"])
-    credit = credit_for(streamer, info)
+    credit = (campaigns.rules_of(camp)["credit"] if camp else "") or credit_for(streamer, info)
     made = produce(src, out, c["start"], c["end"], probe["width"], probe["height"], probe["has_audio"], cw,
-                   c.get("hook", ""), credit, (streamer or {}).get("layout", "auto"), log=log)
+                   c.get("hook", ""), credit, (streamer or {}).get("layout", "auto"), log=log,
+                   callout=c.get("callout", ""))
     plan = made["plan"]
     thumb = cover(out, out_dir / f"{cid}.jpg", made)
-    text = " ".join(w["w"] for w in cw)
+    text = spoken
     clip = {"id": cid, "job_id": job["id"], "streamer_id": job.get("streamer_id"), "title": c.get("title", ""),
             "hook": c.get("hook", ""), "start": c["start"], "end": c["end"], "score": c.get("score", 0),
             "why": c.get("why", ""), "file": str(out), "thumb": str(thumb),
-            "captions": brain.captions(c, streamer, info.get("webpage_url") or job.get("url", ""), text),
+            "captions": campaigns.apply_captions(
+                brain.captions(c, streamer, info.get("webpage_url") or job.get("url", ""), text, lang), camp),
             "guard": {}, "verdict": "pending", "state": "new", "created": time.time()}
-    report = guard.review({**clip, "file": str(out)}, streamer, info, text, _targets(streamer), c.get("flags"))
+    src_info = {**info, "campaign": f"{camp.get('name') or 'campaign'} ({camp.get('url') or camp.get('site') or ''})"
+                .replace(" ()", "")} if camp else info
+    report = guard.review({**clip, "file": str(out)}, streamer, src_info, text, _targets(streamer), c.get("flags"))
+    if camp:
+        chk = campaigns.check(camp, made["dur"], text, clip["captions"])
+        report["checks"].append(chk)
+        if chk["status"] == "review" and report["verdict"] == "pass":
+            report["verdict"], report["auto_post_allowed"] = "review", False
+        report["campaign"] = {"id": camp["id"], "name": camp.get("name", "")}
+    report["captions_lang"] = lang
+    report["callout"] = c.get("callout", "")
     report["layout"] = plan.get("mode")
     report["edit"] = _edit_info(src, c, probe, near,
                                 credit, plan)
@@ -195,7 +224,7 @@ def rerender(clip_id: str, layout: str | None = None, start: float | None = None
     out = Path(clip["file"])
     tmp = out.with_name(out.stem + ".redo.mp4")
     made = produce(src, tmp, s0, s1, ed["w"], ed["h"], ed.get("has_audio", True), words, ed.get("hook", ""),
-                   ed.get("credit", ""), want)
+                   ed.get("credit", ""), want, callout=g.get("callout", ""))
     shutil.move(str(tmp), out)
     out.with_name(out.stem + "_tg.mp4").unlink(missing_ok=True)     # phone preview is stale now
     cover(out, Path(clip["thumb"]), made)
@@ -258,8 +287,12 @@ def run_job(jid: str) -> None:
                 db.log(f"Speech to text failed, clipping without captions: {str(e)[:200]}", "warn",
                        job.get("streamer_id"))
         step("Picking clips", 0.55)
+        camp = campaigns.for_job(job, streamer)
+        lo, hi = campaigns.lengths(camp, config.CLIP_MIN, config.CLIP_MAX)
         picks = brain.find_clips(tr["words"], sig, pr["duration"], info.get("title", ""),
-                                 (streamer or {}).get("name") or info.get("uploader", ""), log=lambda m: step(m))
+                                 (streamer or {}).get("name") or info.get("uploader", ""), log=lambda m: step(m),
+                                 min_len=lo, max_len=hi, lang=caption_lang(job, streamer),
+                                 brief=campaigns.rules_of(camp)["notes"] if camp else "")
         meta = {**job["meta"], "language": tr.get("language"), "duration": pr["duration"],
                 "excite": brain.excite_preview(sig), "source": str(src)}
         db.update("jobs", jid, meta=meta)
@@ -287,10 +320,12 @@ def strip_music(clip_id: str) -> dict:
     job = db.get("jobs", clip["job_id"]) or {}
     streamer = db.get("streamers", clip["streamer_id"]) if clip.get("streamer_id") else None
     info = {"duration": (job.get("meta") or {}).get("duration"), "uploaded_by_you": bool((job.get("meta") or {}).get("file"))}
+    if (clip["guard"].get("campaign") or {}).get("name"):
+        info["campaign"] = clip["guard"]["campaign"]["name"]
     report = guard.review(clip, streamer, info, clip["guard"].get("text", ""), _targets(streamer),
                           clip["guard"].get("ai_flags"))
     report["text"] = clip["guard"].get("text", "")
-    for k in ("layout", "layout_choice", "edit"):
+    for k in ("layout", "layout_choice", "edit", "campaign", "captions_lang", "callout", "made", "cover_at"):
         if k in clip["guard"]:
             report[k] = clip["guard"][k]
     report["music_fix"] = how

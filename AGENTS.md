@@ -55,7 +55,8 @@ The tests need ffmpeg but no keys or internet. They take about a minute.
 | `bcut/brain.py`, `bcut/ai.py` | Clip picking and captions; the only code that calls an AI service |
 | `bcut/reframe.py`, `bcut/render.py` | 9:16 layouts (split, face, speaker, stack, wide, center, fit) and the ffmpeg render; captions avoid faces |
 | `bcut/fx.py`, `bcut/sfx/` | Edit passes: dead air, cold open, punch-ins, sound hits (CC0), loop; `pipeline.produce` runs them |
-| `bcut/learn.py` | Reads post stats back, ranks the autopilot, A/B tests hook styles |
+| `bcut/learn.py` | Reads post stats back, ranks the autopilot, A/B tests hook styles, learns posting times |
+| `bcut/campaigns.py` | Paid clipping campaigns: rules from the brief, caption tags, Guard check, earnings |
 | `bcut/guard/` | Rights & Safety Guard: rights, music, guideline lexicon, platform rules |
 | `bcut/publish/` | Post queue and the Instagram, YouTube, TikTok and Facebook publishers |
 | `bcut/telegram.py` | Phone alerts and remote control through the person's own Telegram bot |

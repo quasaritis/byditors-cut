@@ -14,9 +14,10 @@ says how long it takes and what you need. Only part 1 is required; everything el
 | 7. Facebook and TikTok | More places to post | 15 min each |
 | 8. Streamers | Lives and new uploads clipped automatically | 2 min each |
 | 9. Daily autopilot | A set number of uploads a day, spread out | 1 min |
-| 10. Phone alerts (Telegram) | Clips on your phone with Approve / Reject | 3 min |
-| 11. Keep it running 24/7 | Never miss a live | 3 min |
-| 12. Fixing problems | What each error means | |
+| 10. Paid clipping campaigns | Clips that follow a campaign's brief, and what they earn | 3 min |
+| 11. Phone alerts (Telegram) | Clips on your phone with Approve / Reject | 3 min |
+| 12. Keep it running 24/7 | Never miss a live | 3 min |
+| 13. Fixing problems | What each error means | |
 
 **What you need:** a Windows 10/11 PC (Mac and Linux work too), internet, and about 5 GB of free space.
 A graphics card is not required. An NVIDIA card makes captions faster.
@@ -68,7 +69,14 @@ Clips are saved in the app's `data\clips` folder as 1080 × 1920 MP4 files.
 - **Seamless loop**: the last quarter second dissolves into the first frame, so the replay doesn't jump.
 - **Cover image**: the frame on the biggest reaction. It's used as the Instagram and TikTok cover.
 
+- **Freeze-frame callout** on the biggest moment: the picture holds for a beat with a record scratch and a short
+  line like "WAIT WHAT", plus a light colour grade. It makes a repost your own edit, which platforms and campaigns
+  prefer.
+
 Turn any of these off in **Guard & settings → Editing**.
+
+**Caption language.** Next to the link box, pick **Hinglish / as spoken** or **English captions**. English
+translates the captions, the hook and the title. For a streamer, set it once in their settings (**Captions**).
 
 ### Fixing a clip by hand
 
@@ -318,11 +326,32 @@ The **Queue** page shows everything scheduled. Each item has **Post now** and **
 **It learns from your views.** Every 6 hours the views, likes and comments of your Instagram and YouTube posts are
 read back. Clips from the streamers and hook styles that got the most views go out first, and the AI is shown your
 best hooks when it writes new ones. Hooks are tested in five styles (question, shock, quote, stakes, POV): mostly the
-winner so far, sometimes another. **Guard & settings → Editing** shows how each style is doing.
+winner so far, sometimes another. Posting times are learned too: once an account has 8 posts with views, the
+autopilot posts in the time windows that got it the most views (and now and then tries another window).
+**Guard & settings → Editing** shows how each style and each account's best time is doing.
 
 ---
 
-## 10. Phone alerts and control (Telegram)
+## 10. Paid clipping campaigns
+
+Sites like Content Rewards, Vyro and Clipster (and many streamers' Discord servers) pay per 1,000 views for clips
+of a creator. Join one there, then in the app open **Campaigns → Add campaign**:
+
+1. Paste the campaign's brief and press **Read the brief**. The AI fills in the pay per platform, the minimum views,
+   the most a clip can earn, the clip length, the hashtags and @accounts every caption needs, and what's not
+   allowed. Check them and fix anything it missed.
+2. Tick **Whose clips count**: those streamers' lives and uploads are clipped for the campaign. For any other
+   video, pick the campaign next to the link box when you paste it.
+3. **Add campaign.**
+
+Clips made for a campaign stay inside its length, carry its tags and @mentions in every caption, and the Guard
+flags anything the brief bans. Joining a campaign counts as the creator's permission. Once clips are posted, the
+campaign shows their views and what they should earn (views from Instagram and YouTube are read every 6 hours).
+**Copy links to submit** gives you the post links to paste on the campaign's page.
+
+---
+
+## 11. Phone alerts and control (Telegram)
 
 Get every new clip on your phone as a video with **Approve** and **Reject** buttons, and a message when a streamer
 goes live, a video posts or something fails. You can also check on the app and restart it from anywhere.
@@ -353,7 +382,7 @@ Good to know:
 
 ---
 
-## 11. Keep it running 24/7
+## 12. Keep it running 24/7
 
 Byditors Cut runs on your PC, so **the PC has to be on** to catch lives and post. Chrome doesn't need to be open.
 
@@ -370,7 +399,7 @@ Lives that happened while it was off can't be recorded, but their uploads (VODs)
 
 ---
 
-## 12. Fixing problems
+## 13. Fixing problems
 
 | What you see | What it means and what to do |
 |---|---|

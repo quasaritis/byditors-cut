@@ -796,3 +796,91 @@ def test_virtual_camera_never_swings_back_and_forth():
         flips = int(((d[1:] * d[:-1]) < -1e-9).sum())
         assert flips <= 2, (target[:6], np.round(cam, 3))
         assert np.all(np.abs(d[np.abs(d) < 0.2]) <= 0.4 * 0.25 + 1e-6)   # glides respect the speed limit
+
+
+def test_campaign_rules_shape_every_clip_and_views_turn_into_earnings():
+    from bcut import campaigns
+    s = db.insert("streamers", {"id": "s_camp", "name": "Kai", "channels": {"kick": "https://kick.com/kai"},
+                                "created": time.time(), "seen": [], "status": {}, "rights": "unknown"})
+    assert s["captions"] == "auto"                                  # new column added to old databases too
+    c = db.insert("campaigns", {"id": "k1", "name": "Kai clips", "created": time.time(), "streamers": ["s_camp"],
+                                "rules": campaigns.clean_rules({"cpm": {"instagram": 2, "youtube": "1.5"},
+                                                                 "min_views": 1000, "max_per_clip": 50,
+                                                                 "min_len": 15, "max_len": 40,
+                                                                 "tags": "#kaiclips #ad", "mention": "@kai",
+                                                                 "banned": "gambling, stake"})})
+    job = {"id": "jx", "meta": {}}
+    assert campaigns.for_job(job, s)["id"] == "k1" and campaigns.lengths(c, 10, 90) == (15, 40)
+    caps = campaigns.apply_captions({"instagram": "lol #fyp", "youtube": {"title": "t", "description": "d"}}, c)
+    assert "#kaiclips" in caps["instagram"] and "@kai" in caps["youtube"]["description"]
+    assert campaigns.apply_captions(caps, c) == caps                  # added once, never twice
+    assert campaigns.check(c, 30, "funny moment", caps)["status"] == "ok"
+    bad = campaigns.check(c, 70, "use code on stake", {"instagram": "no tags"})
+    assert bad["status"] == "review" and "longer" in bad["detail"] and "stake" in bad["detail"]
+    db.insert("clips", {"id": "ck1", "job_id": "jx", "title": "Kai moment", "start": 0, "end": 30, "score": 50,
+                        "file": "x", "thumb": "x", "captions": caps, "state": "posted", "verdict": "pass",
+                        "guard": {"campaign": {"id": "k1", "name": "Kai clips"}}, "created": time.time()})
+    acc_ig = db.insert("accounts", {"id": "a_ig_k", "platform": "instagram", "name": "me", "secrets": {},
+                                    "settings": {}, "created": time.time()})
+    acc_yt = db.insert("accounts", {"id": "a_yt_k", "platform": "youtube", "name": "me", "secrets": {},
+                                    "settings": {}, "created": time.time()})
+    for pid, acc in (("pk1", acc_ig), ("pk2", acc_yt)):
+        db.insert("posts", {"id": pid, "clip_id": "ck1", "account_id": acc["id"], "status": "posted", "due": time.time(),
+                            "remote_id": pid, "created": time.time(), "updated": time.time()})
+    db.kv_set("post_metrics", {"pk1": {"views": 40000, "clip": "ck1"}, "pk2": {"views": 600, "clip": "ck1"}})
+    st = campaigns.stats(c)
+    assert st["posted"] == 2 and st["views"] == 40600
+    assert st["earned"] == 50.0                     # 40k views at $2 = $80, capped at $50; YouTube under the minimum
+    db.kv_set("post_metrics", {})
+
+
+def test_best_posting_time_is_learned_per_account():
+    from datetime import datetime
+    from bcut import learn
+    from bcut.publish import day_slots
+    acc = db.insert("accounts", {"id": "a_time", "platform": "instagram", "name": "t", "secrets": {}, "settings": {},
+                                 "created": time.time()})
+    base = datetime(2026, 11, 2).timestamp()
+    m = {}
+    for i in range(12):
+        hour = 19 if i % 2 else 11                           # evening posts do 5x better than morning ones
+        due = base + i * 86400 + hour * 3600
+        db.insert("clips", {"id": f"ct{i}", "job_id": "j", "title": "t", "start": 0, "end": 10, "score": 50,
+                            "file": "x", "thumb": "x", "captions": {}, "state": "posted", "verdict": "pass",
+                            "guard": {}, "created": time.time()})
+        db.insert("posts", {"id": f"pt{i}", "clip_id": f"ct{i}", "account_id": acc["id"], "status": "posted",
+                            "due": due, "remote_id": "r", "created": due, "updated": due})
+        m[f"pt{i}"] = {"views": 5000 if hour == 19 else 1000, "clip": f"ct{i}"}
+    db.kv_set("post_metrics", m)
+    st = learn.hour_stats(acc["id"])
+    assert st[19]["lift"] > st[11]["lift"]
+    day = datetime(2026, 12, 1).date()
+    slots = day_slots(day, 1, acc["id"])
+    assert len(slots) == 1 and 18 <= datetime.fromtimestamp(slots[0]).hour <= 21 or \
+        learn.best_hours(acc["id"], 1, day.toordinal()) is not None
+    hits = sum(19 <= learn.best_hours(acc["id"], 1, d)[0] < 21 for d in range(200))
+    assert hits > 140                                         # mostly the best window, sometimes exploring
+    assert len(day_slots(day, 2)) == 2                         # no account: spread evenly as before
+    db.kv_set("post_metrics", {})
+
+
+def test_freeze_frame_callout_and_english_captions(tmp_path, monkeypatch):
+    from bcut import ai, brain, fx
+    src = _talky(tmp_path)
+    st = {**fx.DEFAULTS, "cold_open": False}
+    made = pipeline.produce(src, tmp_path / "o.mp4", 0, 30, 960, 540, True, _talk_words(), "", "", "center", st=st,
+                            callout="WAIT WHAT")
+    assert made["edit"]["freeze"] and made["fx"]["callout"]["text"] == "WAIT WHAT"
+    a, b = made["fx"]["callout"]["at"]
+    assert abs((b - a) - fx.FREEZE) < 0.01 and any(s["name"] == "rewind" and abs(s["t"] - a) < 0.05
+                                                    for s in made["fx"]["sounds"])
+    assert abs(probe(tmp_path / "o.mp4")["duration"] - made["dur"]) < 0.4
+    words = [{"w": w, "s": i * 0.3, "e": i * 0.3 + 0.25} for i, w in enumerate("bhai ye kya kar diya".split())]
+    monkeypatch.setattr(ai, "enabled", lambda: True)
+    monkeypatch.setattr(ai, "ask_json", lambda *a_, **k: {"lines": ["bro what did you just do"]})
+    en = brain.to_english(words, log=lambda *x: None)
+    assert [w["w"] for w in en] == "bro what did you just do".split()
+    assert en[0]["s"] == 0 and en[-1]["e"] <= words[-1]["e"] + 0.01
+    assert pipeline.caption_lang({"meta": {"captions": "english"}}, None) == "english"
+    assert pipeline.caption_lang({"meta": {}}, {"captions": "english"}) == "english"
+    assert pipeline.caption_lang({"meta": {"captions": "auto"}}, {"captions": "auto"}) == "auto"

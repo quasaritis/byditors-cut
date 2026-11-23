@@ -31,6 +31,13 @@ a{color:inherit;text-underline-offset:3px}
 button,input,select,textarea{font:inherit;color:inherit}
 .num,td.n,.kpi b{font-variant-numeric:tabular-nums}
 [hidden]{display:none!important}
+.camp{margin-top:var(--gap)}
+.camp h2{font-size:var(--fs-section);font-weight:600;margin:0}
+.kpis.small{grid-template-columns:repeat(4,1fr);background:transparent;border:1px solid #1d1d1d}
+.kpis.small .kpi b{font-size:22px}
+.cpm{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.cpm label{display:grid;gap:4px;font-size:12px;color:var(--muted)}
+@media (max-width:860px){.cpm,.kpis.small{grid-template-columns:repeat(2,1fr)}}
 .trim{margin:16px 4px 0;padding-top:14px;border-top:1px solid var(--border)}
 .trim h3{font-size:14px;font-weight:600;margin:0 0 10px}
 .trim video{width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;margin-bottom:10px}
@@ -254,6 +261,8 @@ tr.click:hover td{background:#151515}
     <form class="clipbar" id="clipform">
       <input id="clipurl" type="url" aria-label="Video or stream link to clip" placeholder="Paste a YouTube, Kick, Twitch or TikTok link to clip" required>
       <select class="field" id="cliprights" aria-label="Whose video is this?" style="width:auto;height:var(--ctl);border-radius:999px" title="Clips of videos that are yours, or that you have permission for, can be posted automatically"><option value="unknown">Clip only</option><option value="own">It's my video</option><option value="permission">I have permission</option></select>
+      <select class="field" id="clipcaps" aria-label="Caption language" style="width:auto;height:var(--ctl);border-radius:999px" title="Captions as spoken (Hinglish stays Hinglish, in Roman letters), or translated to English"><option value="auto">Hinglish / as spoken</option><option value="english">English captions</option></select>
+      <select class="field" id="clipcamp" aria-label="Campaign" style="width:auto;height:var(--ctl);border-radius:999px" hidden title="Make these clips for a paid campaign: its rules apply"><option value="">No campaign</option></select>
       <button class="btn primary" type="submit">Make clips</button>
       <label class="btn ghost" for="upfile" tabindex="0">Upload</label>
       <input id="upfile" type="file" accept="video/*" hidden>
@@ -264,6 +273,7 @@ tr.click:hover td{background:#151515}
     <a href="#today" data-v="today"><svg viewBox="0 0 24 24"><path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>Today</a>
     <a href="#inbox" data-v="inbox"><svg viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13L20 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6z"/></svg>Clip inbox<span class="count" id="c-inbox" hidden></span></a>
     <a href="#streamers" data-v="streamers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="11" r="2.5"/></svg>Streamers</a>
+    <a href="#campaigns" data-v="campaigns"><svg viewBox="0 0 24 24"><path d="M12 3v18M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 2 2.6 4.5 3 4.5 1.4 4.5 3.3-2 3.2-4.5 3.2-4.5-1.4-4.5-3.2"/></svg>Campaigns</a>
     <h6>Publishing</h6>
     <a href="#queue" data-v="queue"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9h16M9 3v4M15 3v4"/></svg>Post queue<span class="count" id="c-failed" hidden></span></a>
     <a href="#accounts" data-v="accounts"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 1 0-5.7l2.3-2.3a4 4 0 0 1 5.7 5.7l-1.2 1.1"/><path d="M14 10a4 4 0 0 1 0 5.7l-2.3 2.3a4 4 0 0 1-5.7-5.7l1.2-1.1"/></svg>Accounts</a>
@@ -502,6 +512,7 @@ function streamerForm(s = {}, accs = []) {
     <div><label class="f" for="s-note">Proof of permission</label><input class="field" id="s-note" name="rights_note" value="${esc(s.rights_note)}" placeholder="Link to their clip-program rules or your email thread"></div>
     <div><label class="f" for="s-layout">Vertical layout</label><select class="field" id="s-layout" name="layout">${["auto","split","face","speaker","stack","wide","center"].map(k => `<option value="${k}" ${((s.layout === "blur" ? "wide" : s.layout)||"auto") === k ? "selected" : ""}>${LAYOUT[k]}</option>`).join("")}</select></div>
     <div><label class="f" for="s-lang">Language</label><select class="field" id="s-lang" name="language">${[["","Detect"],["hi","Hindi / Hinglish"],["en","English"],["ur","Urdu"],["ta","Tamil"],["te","Telugu"],["bn","Bengali"],["mr","Marathi"],["es","Spanish"]].map(([k,l]) => `<option value="${k}" ${(s.language||"") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div><label class="f" for="s-caps">Captions</label><select class="field" id="s-caps" name="captions">${[["auto","As spoken (Hinglish in Roman letters)"],["english","English (translated)"]].map(([k,l]) => `<option value="${k}" ${(s.captions || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select><p class="hint">English also writes the hook and title in English.</p></div>
     <div class="wide">
       <div class="swrow"><div><b>Clip their lives</b><p>Record as soon as they go live and cut the spikes while they stream.</p></div><span class="tog"><input type="checkbox" name="auto_live" aria-label="Clip their lives" ${s.auto_live !== 0 ? "checked" : ""}><span></span></span></div>
       <div class="swrow"><div><b>Clip new uploads</b><p>New videos and VODs are downloaded and clipped. Their back catalogue is skipped.</p></div><span class="tog"><input type="checkbox" name="auto_uploads" aria-label="Clip new uploads" ${s.auto_uploads !== 0 ? "checked" : ""}><span></span></span></div>
@@ -533,7 +544,7 @@ async function viewStreamers() {
   const bindForm = () => {
     const f = $("#sform"); if (!f) return;
     f.onsubmit = e => { e.preventDefault(); const fd = new FormData(f);
-      const body = {name: fd.get("name"), credit: fd.get("credit"), channels: fd.get("channels"), rights: fd.get("rights"), rights_note: fd.get("rights_note"), layout: fd.get("layout"), language: fd.get("language"),
+      const body = {name: fd.get("name"), credit: fd.get("credit"), channels: fd.get("channels"), rights: fd.get("rights"), rights_note: fd.get("rights_note"), layout: fd.get("layout"), language: fd.get("language"), captions: fd.get("captions"),
         auto_live: !!fd.get("auto_live"), auto_uploads: !!fd.get("auto_uploads"), auto_post: !!fd.get("auto_post"), post_to: fd.getAll("post_to")};
       act(f.querySelector(".btn.primary"), async () => { await api(edit ? `/api/streamers/${edit.id}` : "/api/streamers", {method: edit ? "PATCH" : "POST", body}); location.hash = "#streamers"; viewStreamers(); }, edit ? "Saved" : "Added — checking their channels now"); };
     if ($("#s-cancel")) $("#s-cancel").onclick = () => location.hash = "#streamers";
@@ -641,7 +652,8 @@ async function viewSettings() {
     $("#edpanel").innerHTML = Object.entries(d.labels).map(([k, l]) => `<div class="swrow"><div><b>${esc(l)}</b></div><span class="tog"><input type="checkbox" data-ed="${k}" aria-label="${esc(l)}" ${d.style[k] ? "checked" : ""}><span></span></span></div>`).join("");
     api("/api/learn").then(L => { const el = document.createElement("div"); el.className = "swrow";
       const tested = Object.entries(L.styles).filter(([, v]) => v.n);
-      el.innerHTML = `<div><b>Learning from your views</b><p>${L.posts ? `${L.posts} posts read, ${L.views.toLocaleString()} views. ` + (tested.length ? "Hook styles so far: " + tested.map(([k, v]) => `${k} ${v.lift}× (${v.n})`).join(", ") + "." : "Hook styles get compared once a few posts have views.") : "Once clips are posted, their views are read every 6 hours. Clips like your winners get posted first, and new hooks learn from your best ones."}</p></div><button type="button" class="btn ghost sm" id="lrn">Read views now</button>`;
+      const tl = Object.values(L.times || {}).filter(a => a.posts).map(a => `${PLAT[a.platform] || a.platform} ${esc(a.name)}: ${a.learning && a.best !== null ? `best around ${((a.best + 1) % 12) || 12}${a.best + 1 >= 12 ? "pm" : "am"} (${a.lift}×)` : `${a.posts} of 8 posts needed`}`).join(" · ");
+      el.innerHTML = `<div><b>Learning from your views</b><p>${tl ? `Posting times: ${tl}. ` : ""}${L.posts ? `${L.posts} posts read, ${L.views.toLocaleString()} views. ` + (tested.length ? "Hook styles so far: " + tested.map(([k, v]) => `${k} ${v.lift}× (${v.n})`).join(", ") + "." : "Hook styles get compared once a few posts have views.") : "Once clips are posted, their views are read every 6 hours. Clips like your winners get posted first, and new hooks learn from your best ones."}</p></div><button type="button" class="btn ghost sm" id="lrn">Read views now</button>`;
       $("#edpanel").append(el); $("#lrn").onclick = e => act(e.currentTarget, async () => { const r = await api("/api/learn/refresh", {method: "POST"}); viewSettings(); return r; }, "Views read"); }).catch(() => {});
     $("#edpanel").querySelectorAll("[data-ed]").forEach(i => i.onchange = () => api("/api/edit-style", {method: "POST", body: {[i.dataset.ed]: i.checked}}).then(() => toast("Saved. New clips use it.")).catch(e => { i.checked = !i.checked; toast(e.message, true); }));
   }).catch(() => {});
@@ -680,11 +692,79 @@ async function viewSettings() {
   $("#f-ai").onsubmit = e => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.test = !!b.provider; act(e.submitter, async () => { await api("/api/settings/ai", {method: "POST", body: b}); loadState(); }, "Saved and working"); };
 }
 
-const VIEWS = {today: viewToday, inbox: viewInbox, streamers: viewStreamers, queue: viewQueue, accounts: viewAccounts, settings: viewSettings};
+/* ---------------- Campaigns ---------------- */
+const money = v => `$${(+v || 0).toLocaleString([], {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+const CPLAT = ["instagram", "youtube", "tiktok", "facebook"];
+function campaignForm(c = {}, streamers = []) {
+  const r = c.rules || {}, cpm = r.cpm || {}, mine = c.streamers || [];
+  const ends = c.ends ? new Date(c.ends * 1000).toISOString().slice(0, 10) : "";
+  return `<form class="panel" id="kform"><div class="fgrid">
+    <div class="wide"><label class="f" for="k-brief">The campaign's brief</label><textarea class="field" id="k-brief" name="brief" rows="5" placeholder="Paste the whole brief from Content Rewards, Vyro, Clipster or the Discord post">${esc(c.brief)}</textarea>
+      <div class="acts" style="margin-top:8px"><button type="button" class="btn" id="k-read">Read the brief</button><span class="hint" style="margin:0">The AI fills in the rules below. Check them before saving.</span></div></div>
+    <div><label class="f" for="k-name">Name</label><input class="field" id="k-name" name="name" value="${esc(c.name)}" required placeholder="Kai Cenat Kick clips"></div>
+    <div><label class="f" for="k-site">Where it runs</label><input class="field" id="k-site" name="site" value="${esc(c.site)}" placeholder="Content Rewards, Vyro, Discord…"></div>
+    <div class="wide"><label class="f" for="k-url">Campaign page</label><input class="field" id="k-url" name="url" value="${esc(c.url)}" placeholder="https://… where you submit your links"></div>
+    <div class="wide"><label class="f">Pay per 1,000 views (US$)</label><div class="cpm">${CPLAT.map(p => `<label>${PLAT[p]}<input class="field" name="cpm_${p}" inputmode="decimal" value="${cpm[p] ?? ""}" placeholder="0"></label>`).join("")}</div><p class="hint">Leave a platform empty if the campaign doesn't pay there.</p></div>
+    <div><label class="f" for="k-min">Minimum views per clip</label><input class="field" id="k-min" name="min_views" inputmode="numeric" value="${r.min_views || ""}" placeholder="0"></div>
+    <div><label class="f" for="k-cap">Most a clip can earn (US$)</label><input class="field" id="k-cap" name="max_per_clip" inputmode="decimal" value="${r.max_per_clip || ""}" placeholder="No cap"></div>
+    <div><label class="f" for="k-l0">Shortest clip (seconds)</label><input class="field" id="k-l0" name="min_len" inputmode="numeric" value="${r.min_len || ""}" placeholder="Your usual"></div>
+    <div><label class="f" for="k-l1">Longest clip (seconds)</label><input class="field" id="k-l1" name="max_len" inputmode="numeric" value="${r.max_len || ""}" placeholder="Your usual"></div>
+    <div><label class="f" for="k-tags">Hashtags every caption needs</label><input class="field" id="k-tags" name="tags" value="${esc(r.tags)}" placeholder="#ad #brandname"></div>
+    <div><label class="f" for="k-men">Accounts to tag</label><input class="field" id="k-men" name="mention" value="${esc(r.mention)}" placeholder="@brand"></div>
+    <div><label class="f" for="k-cred">Credit line</label><input class="field" id="k-cred" name="credit" value="${esc(r.credit)}" placeholder="Their usual credit line"></div>
+    <div><label class="f" for="k-ban">Not allowed</label><input class="field" id="k-ban" name="banned" value="${esc((r.banned || []).join(", "))}" placeholder="gambling, other brands, …"></div>
+    <div class="wide"><label class="f" for="k-notes">What the brief wants</label><input class="field" id="k-notes" name="notes" value="${esc(r.notes)}" placeholder="Funny moments only, no gameplay without facecam…"><p class="hint">The AI reads this when it picks clips.</p></div>
+    ${streamers.length ? `<div class="wide"><label class="f">Whose clips count</label><div class="targets">${streamers.map(x => `<label><input type="checkbox" name="streamers" value="${x.id}" ${mine.includes(x.id) ? "checked" : ""}> ${esc(x.name)}</label>`).join("")}</div><p class="hint">Their lives and uploads are clipped for this campaign. For any other video, pick the campaign next to the link box.</p></div>` : ""}
+    <div><label class="f" for="k-status">Status</label><select class="field" id="k-status" name="status">${[["active","Active"],["paused","Paused"],["ended","Ended"]].map(([k,l]) => `<option value="${k}" ${(c.status || "active") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div><label class="f" for="k-ends">Ends</label><input class="field" id="k-ends" name="ends" type="date" value="${ends}"></div>
+  </div><div class="acts" style="margin-top:6px"><button class="btn primary">${c.id ? "Save changes" : "Add campaign"}</button><button type="button" class="btn ghost" id="k-cancel">Close</button>${c.id ? `<button type="button" class="btn danger" id="k-del" style="margin-left:auto">Remove campaign</button>` : ""}</div></form>`;
+}
+async function viewCampaigns() {
+  const [list, streamers] = await Promise.all([api("/api/campaigns"), api("/api/streamers"), loadState()]);
+  const edit = S.sel && S.sel !== "new" ? list.find(c => c.id === S.sel) : null;
+  const tot = list.reduce((a, c) => ({earned: a.earned + c.stats.earned, views: a.views + c.stats.views, posted: a.posted + c.stats.posted}), {earned: 0, views: 0, posted: 0});
+  const card = c => { const st = c.stats, r = c.rules;
+    const rates = Object.entries(r.cpm || {}).filter(([, v]) => v > 0).map(([p, v]) => `${PLAT[p]} ${money(v)}`).join(" · ") || "No rates set";
+    const links = st.posts.filter(p => p.url).map(p => p.url);
+    return `<section class="card camp"><header><div><h2>${esc(c.name)}</h2><p class="sub" style="margin:2px 0 0">${esc(c.site || "")}${c.site ? " · " : ""}${rates} per 1,000 views${r.min_views ? ` · ${(+r.min_views).toLocaleString()} views minimum` : ""}${r.max_per_clip ? ` · up to ${money(r.max_per_clip)} a clip` : ""}</p></div>
+      <div class="acts"><span class="pill ${c.status === "active" ? "ok" : ""}">${{active: "Active", paused: "Paused", ended: "Ended"}[c.status] || c.status}</span><a class="btn ghost sm" href="#campaigns/${c.id}">Edit</a></div></header>
+      <div class="kpis small"><div class="kpi"><span>Clips made</span><b>${st.clips}</b></div><div class="kpi"><span>Posted</span><b>${st.posted}</b></div><div class="kpi"><span>Views</span><b>${st.views.toLocaleString()}</b></div><div class="kpi"><span>Should earn</span><b>${money(st.earned)}</b><small>estimate</small></div></div>
+      ${st.posts.length ? `<table style="margin-top:12px"><thead><tr><th>Clip</th><th>Where</th><th class="n">Views</th><th class="n">Earns</th><th></th></tr></thead><tbody>${st.posts.slice(0, 12).map(p => `<tr><td><a href="#inbox/${p.clip}">${esc(p.title || "Clip")}</a></td><td>${PLAT[p.platform] || esc(p.platform)}</td><td class="n num">${p.views.toLocaleString()}</td><td class="n num">${p.counts ? money(p.earn) : `<span class="faint" title="Under the minimum views, or a platform this campaign doesn't pay on">—</span>`}</td><td class="n">${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="muted" style="margin:12px 0 0">No posts yet. Clips made for this campaign show here with their views once they're posted.</p>`}
+      <div class="acts" style="margin-top:12px">${links.length ? `<button class="btn sm" data-copy="${esc(links.join("\n"))}">Copy ${links.length} link${links.length === 1 ? "" : "s"} to submit</button>` : ""}${c.url ? `<a class="btn ghost sm" href="${esc(c.url)}" target="_blank" rel="noopener">Open campaign page</a>` : ""}</div></section>`; };
+  main.innerHTML = `<div class="titlerow"><div><h1>Campaigns</h1><p class="sub">${list.length ? `${list.filter(c => c.status === "active").length} active · ${tot.posted} posts · ${tot.views.toLocaleString()} views · about ${money(tot.earned)} earned` : "Paid clipping campaigns you've joined. Their clips follow the brief, and your views turn into an earnings estimate."}</p></div>
+    ${S.sel ? "" : `<button class="btn primary" id="kadd">Add campaign</button>`}</div>
+  <div id="kslot">${S.sel ? `<h2 class="railh">${edit ? "Edit " + esc(edit.name) : "New campaign"}</h2>${campaignForm(edit || {}, streamers)}` : ""}</div>
+  ${list.length ? list.map(card).join("") : S.sel ? "" : `<section class="card"><div class="empty"><b>No campaigns yet</b>Join one on Content Rewards, Vyro or Clipster, or in a streamer's Discord, then add it here: paste its brief and the rules fill in by themselves. Views are read from your accounts every 6 hours.</div></section>`}`;
+  if ($("#kadd")) $("#kadd").onclick = () => { location.hash = "#campaigns/new"; };
+  main.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => { try { await navigator.clipboard.writeText(b.dataset.copy); toast("Links copied. Paste them on the campaign page."); } catch (e) { toast("Couldn't copy: select them from the table instead", true); } });
+  const f = $("#kform"); if (!f) return;
+  $("#k-cancel").onclick = () => { location.hash = "#campaigns"; };
+  if ($("#k-del")) $("#k-del").onclick = e => act(e.currentTarget, async () => { await api(`/api/campaigns/${edit.id}`, {method: "DELETE"}); location.hash = "#campaigns"; loadCampaignPicker(); }, "Removed");
+  $("#k-read").onclick = e => act(e.currentTarget, async () => {
+    const g = await api("/api/campaigns/read-brief", {method: "POST", body: {brief: $("#k-brief").value}});
+    const set = (n, v) => { const el = f.elements[n]; if (el && v !== undefined && v !== null && v !== "" && v !== 0) el.value = v; };
+    set("name", g.name); set("site", g.site);
+    CPLAT.forEach(p => set("cpm_" + p, (g.rules.cpm || {})[p]));
+    ["min_views", "max_per_clip", "min_len", "max_len", "tags", "mention", "credit", "notes"].forEach(k => set(k, g.rules[k]));
+    set("banned", (g.rules.banned || []).join(", "));
+    f.querySelectorAll("[name=streamers]").forEach(x => { if ((g.streamers || []).includes(x.value)) x.checked = true; });
+  }, "Rules filled in. Check them, then save.");
+  f.onsubmit = e => { e.preventDefault(); const fd = new FormData(f);
+    const num = k => fd.get(k) === "" ? 0 : +fd.get(k);
+    const cpm = {}; CPLAT.forEach(p => { if (fd.get("cpm_" + p) !== "") cpm[p] = +fd.get("cpm_" + p); });
+    const body = {name: fd.get("name"), site: fd.get("site"), url: fd.get("url"), brief: fd.get("brief"), status: fd.get("status"),
+      ends: fd.get("ends") ? new Date(fd.get("ends") + "T23:59:59").getTime() / 1000 : 0, streamers: fd.getAll("streamers"),
+      rules: {cpm, min_views: num("min_views"), max_per_clip: num("max_per_clip"), min_len: num("min_len"), max_len: num("max_len"),
+        tags: fd.get("tags"), mention: fd.get("mention"), credit: fd.get("credit"), banned: fd.get("banned"), notes: fd.get("notes")}};
+    act(f.querySelector(".btn.primary"), async () => { await api(edit ? `/api/campaigns/${edit.id}` : "/api/campaigns", {method: edit ? "PATCH" : "POST", body}); location.hash = "#campaigns"; loadCampaignPicker(); }, edit ? "Saved" : "Campaign added");
+  };
+}
+
+const VIEWS = {today: viewToday, inbox: viewInbox, streamers: viewStreamers, campaigns: viewCampaigns, queue: viewQueue, accounts: viewAccounts, settings: viewSettings};
 
 /* ---------------- top bar: clip a link / upload ---------------- */
 async function submitLink(url) {
-  try { await api("/api/jobs", {method: "POST", body: {url, rights: $("#cliprights")?.value || "unknown"}}); toast("Added. It shows under Working on."); $("#clipurl").value = ""; if (S.view === "today") viewToday(); else location.hash = "#today"; }
+  try { await api("/api/jobs", {method: "POST", body: {url, rights: $("#cliprights")?.value || "unknown", captions: $("#clipcaps").value, campaign_id: $("#clipcamp").value}}); toast("Added. It shows under Working on."); $("#clipurl").value = ""; if (S.view === "today") viewToday(); else location.hash = "#today"; }
   catch (e) { toast(e.message, true); }
 }
 $("#clipform").onsubmit = e => { e.preventDefault(); submitLink($("#clipurl").value.trim()); };
@@ -695,6 +775,13 @@ $("#upfile").onchange = async e => {
   try { await api("/api/upload", {method: "POST", body: fd}); toast("Uploaded. Clipping it now."); location.hash = "#today"; viewToday(); } catch (err) { toast(err.message, true); }
   e.target.value = "";
 };
+async function loadCampaignPicker() {
+  try { const cs = (await api("/api/campaigns")).filter(c => c.status === "active");
+    const sel = $("#clipcamp"), cur = sel.value;
+    sel.innerHTML = `<option value="">No campaign</option>` + cs.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+    sel.value = cs.some(c => c.id === cur) ? cur : ""; sel.hidden = !cs.length; } catch (e) {}
+}
+loadCampaignPicker();
 route();
 </script>
 </body>

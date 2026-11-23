@@ -38,6 +38,9 @@ def rights_check(streamer: dict | None, source: dict) -> dict:
     if any(c in licence for c in CC_LICENCES):
         return _check("rights", "Rights", "ok", f"Source is published under {source.get('license')}: reuse allowed "
                       "with credit. Credit is added automatically.")
+    if source.get("campaign"):
+        return _check("rights", "Rights", "ok", f"Made for the paid clipping campaign {source['campaign']}: the "
+                      "creator asked for clips.")
     if not streamer:
         if source.get("uploaded_by_you"):
             return _check("rights", "Rights", "ok", "You uploaded this file yourself.")

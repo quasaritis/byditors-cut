@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import ai, config, db, fx, guard, live, media, pipeline, publish, radar, reframe, telegram, tools, transcribe, winsys
+from . import ai, campaigns, config, db, fx, guard, live, media, pipeline, publish, radar, reframe, telegram, tools, transcribe, winsys
 from .guard import music, rules
 from .publish import platforms
 
@@ -163,13 +163,18 @@ def new_job(b: dict = Depends(_body)):
         raise HTTPException(400, "Paste a full link that starts with https://")
     sid = b.get("streamer_id") or None
     rights = b.get("rights") if b.get("rights") in ("own", "permission", "unknown") else "unknown"
+    caps = b.get("captions") if b.get("captions") in ("auto", "hinglish", "english") else "auto"
+    camp = b.get("campaign_id") if b.get("campaign_id") and db.get("campaigns", str(b["campaign_id"])) else ""
+    if camp and rights == "unknown":
+        rights = "permission"           # joining a paid clipping campaign is the creator's permission
     if not sid:  # tie the link to a streamer you already added, so their rights + credit apply
         for s in db.query("SELECT * FROM streamers"):
             if any(radar.handle(u).lower().lstrip("@") == radar.handle(url).lower().lstrip("@")
                    and media.platform_of(u) == media.platform_of(url) for u in (s["channels"] or {}).values()):
                 sid = s["id"]
                 break
-    return pipeline.create_job("video", url=url, streamer_id=sid, meta={"rights": rights})
+    return pipeline.create_job("video", url=url, streamer_id=sid,
+                               meta={"rights": rights, "captions": caps, "campaign_id": camp})
 
 
 @app.post("/api/upload")
@@ -329,8 +334,16 @@ def learned():
     from . import learn
 
     rs = learn.results()
+    times = {}
+    for a in db.query("SELECT id, platform, name FROM accounts"):
+        st = learn.hour_stats(a["id"])
+        n = sum(v["n"] for v in st.values())
+        best = max((h for h in st if st[h]["n"] >= 2), key=lambda h: st[h]["lift"], default=None)
+        times[a["id"]] = {"name": a["name"], "platform": a["platform"], "posts": n,
+                          "best": best, "lift": st[best]["lift"] if best is not None else None,
+                          "learning": n >= 8}
     return {"posts": len(rs), "styles": learn.style_stats(), "labels": learn.STYLES, "top_hooks": learn.top_hooks(),
-            "views": sum(r["views"] for r in rs)}
+            "views": sum(r["views"] for r in rs), "times": times}
 
 
 @app.post("/api/learn/refresh")
@@ -338,6 +351,80 @@ def learn_refresh():
     from . import learn
 
     return {"updated": learn.refresh()}
+
+
+# ---------------------------------------------------------------- campaigns
+
+def _campaign_public(c: dict) -> dict:
+    return {**c, "rules": campaigns.rules_of(c), "stats": campaigns.stats(c)}
+
+
+@app.get("/api/campaigns")
+def list_campaigns():
+    return [_campaign_public(c) for c in db.query("SELECT * FROM campaigns ORDER BY created DESC")]
+
+
+def _campaign_fields(b: dict) -> dict:
+    out = {}
+    for k, n in (("name", 80), ("site", 60), ("url", 500), ("brief", 8000)):
+        if k in b:
+            out[k] = str(b[k] or "").strip()[:n]
+    if "url" in out and out["url"] and not out["url"].startswith(("http://", "https://")):
+        out["url"] = "https://" + out["url"]
+    if "rules" in b and isinstance(b["rules"], dict):
+        out["rules"] = campaigns.clean_rules(b["rules"])
+    if "streamers" in b and isinstance(b["streamers"], list):
+        out["streamers"] = [x for x in b["streamers"] if db.get("streamers", str(x))]
+    if b.get("status") in ("active", "paused", "ended"):
+        out["status"] = b["status"]
+    if "ends" in b:
+        try:
+            out["ends"] = float(b["ends"] or 0)
+        except (TypeError, ValueError):
+            out["ends"] = 0.0
+    return out
+
+
+@app.post("/api/campaigns")
+def add_campaign(b: dict = Depends(_body)):
+    f = _campaign_fields(b)
+    if not f.get("name"):
+        raise HTTPException(400, "Give the campaign a name")
+    c = db.insert("campaigns", {"id": db.new_id("k"), "created": time.time(), "rules": campaigns.clean_rules({}),
+                                "streamers": [], **f})
+    db.log(f"Joined campaign {c['name']}")
+    return _campaign_public(c)
+
+
+@app.patch("/api/campaigns/{kid}")
+def edit_campaign(kid: str, b: dict = Depends(_body)):
+    _need("campaigns", kid)
+    return _campaign_public(db.update("campaigns", kid, **_campaign_fields(b)))
+
+
+@app.delete("/api/campaigns/{kid}")
+def delete_campaign(kid: str):
+    _need("campaigns", kid)
+    db.delete("campaigns", kid)
+    return {"ok": True}
+
+
+@app.post("/api/campaigns/read-brief")
+def read_brief(b: dict = Depends(_body)):
+    """Fill a campaign's rules from its pasted brief (the AI reads it)."""
+    text = str(b.get("brief") or "").strip()
+    if len(text) < 20:
+        raise HTTPException(400, "Paste the campaign's brief first")
+    try:
+        got = campaigns.parse_brief(text)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Couldn't read the brief: {str(e)[:200]}") from e
+    # creators named in the brief that you already follow
+    names = [n.lower().strip() for n in got.pop("creators", []) if len(n.strip()) > 2]
+    got["streamers"] = [s["id"] for s in db.query("SELECT id, name, channels_json FROM streamers")
+                        if any(s["name"].lower() in n or n in s["name"].lower() or
+                               any(n in str(u).lower() for u in (s.get("channels") or {}).values()) for n in names)]
+    return got
 
 
 @app.get("/api/edit-style")
@@ -386,6 +473,8 @@ def _streamer_fields(b: dict) -> dict:
     for k in ("rights_note", "credit", "layout", "language"):
         if k in b:
             out[k] = str(b[k])[:500]
+    if "captions" in b:
+        out["captions"] = b["captions"] if b["captions"] in ("auto", "hinglish", "english") else "auto"
     for k in ("auto_live", "auto_uploads", "auto_post"):
         if k in b:
             out[k] = 1 if b[k] else 0

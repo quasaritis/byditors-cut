@@ -149,7 +149,7 @@ def _wrap(text: str, size: float, ratio: float, max_w: float = MAX_LINE_W) -> li
 
 
 def build_ass(words: list[dict], start: float, end: float, hook: str, credit: str, plan: dict | int | None = None,
-              src_w: int = 1920, src_h: int = 1080) -> str:
+              src_w: int = 1920, src_h: int = 1080, callout: dict | None = None) -> str:
     """Subtitles for one clip. `plan` is the reframe plan (an int is read as a fixed caption y, as before)."""
     if isinstance(plan, int) or plan is None:
         spots, faces = {"cap": int(plan or 1300), "hook": 330}, []
@@ -253,6 +253,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 else:
                     tag = f"{pos}{enter}\\fscx{sc}\\fscy{sc}"
                 ev.append(f"Dialogue: 1,{_ts(s0)},{_ts(s1)},Cap,,0,0,0,,{{{tag}}}{shown[j]}")
+    if callout and callout.get("text") and callout.get("at"):
+        # the freeze-frame callout: big, slightly tilted, slams in, like an editor pointing at the moment
+        a, b = callout["at"]
+        txt = " ".join(_clean(x) for x in str(callout["text"]).split())
+        cs = int(size * 1.1)
+        ln = _wrap(txt, cs, ratio, 860)[:2]
+        if ln:
+            ch = (cs * 0.32 + 8) * len(ln)
+            cwid = max(_width(x, cs, ratio) for x in ln) / 2
+            cy = _place(int(1920 * 0.36), a, b + 0.3, ch, cwid, faces, None)
+            ev.append(f"Dialogue: 3,{_ts(a)},{_ts(b + 0.35)},Cap,,0,0,0,,"
+                      f"{{\\an5\\pos(540,{cy})\\blur0.6\\frz4\\c{HIGHLIGHT}\\fs{cs}\\alpha&HFF&"
+                      f"\\fscx150\\fscy150\\t(0,60,\\alpha&H00&)\\t(0,140,0.4,\\fscx96\\fscy96)"
+                      f"\\t(140,220,\\fscx100\\fscy100)\\fad(0,120)}}" + "\\N".join(ln))
     if credit:
         ev.append(f"Dialogue: 0,{_ts(0)},{_ts(dur)},Credit,,0,0,0,,{_esc(credit)}")
     return head + "\n".join(ev) + "\n"
@@ -273,7 +287,7 @@ def _face_centre(plan: dict):
 
 def render(src: Path, out: Path, start: float, end: float, plan: dict, src_w: int, src_h: int,
            words: list[dict], hook: str = "", credit: str = "", has_audio: bool = True,
-           fx: dict | None = None) -> Path:
+           fx: dict | None = None, grade: bool = False) -> Path:
     """Render one clip. Works in a short temporary folder so Windows path limits and filter escaping can't bite.
     `fx` adds punch-ins ({"punches": [...]}) and sound hits ({"sounds": [...]}) from bcut.fx."""
     from . import fx as fxmod
@@ -287,14 +301,15 @@ def render(src: Path, out: Path, start: float, end: float, plan: dict, src_w: in
         fonts.mkdir()
         for f in FONTS.glob("*.ttf"):
             shutil.copy(f, fonts / f.name)
-        (work / "subs.ass").write_text(build_ass(words, start, end, hook, credit, plan, src_w, src_h),
-                                       encoding="utf-8")
+        (work / "subs.ass").write_text(build_ass(words, start, end, hook, credit, plan, src_w, src_h,
+                                                 callout=fx.get("callout")), encoding="utf-8")
         moves = reframe.commands(plan, dur, src_w, src_h)
         if moves:
             (work / "moves.txt").write_text(moves, encoding="utf-8")
         zoom = fxmod.zoom_filter(fx.get("punches") or [], _face_centre(plan))
         graph = (reframe.filter_graph(plan, src_w, src_h, has_cmds=bool(moves)) +
-                 ";[v]" + (zoom + "," if zoom else "") + "subtitles=subs.ass:fontsdir=fonts,fps=30,format=yuv420p[vo]")
+                 ";[v]" + ("eq=contrast=1.06:saturation=1.14:gamma=0.98," if grade else "") +
+                 (zoom + "," if zoom else "") + "subtitles=subs.ass:fontsdir=fonts,fps=30,format=yuv420p[vo]")
         cmd = [need("ffmpeg"), "-v", "error", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}",
                "-i", str(src.resolve())]
         sounds = [s for s in (fx.get("sounds") or []) if s["t"] < dur - 0.1 and fxmod.sound(s["name"])]

@@ -120,7 +120,9 @@ def results() -> list[dict]:
         c = db.get("clips", m.get("clip", ""))
         if not c:
             continue
+        post = db.get("posts", pid) or {}
         out.append({"post": pid, "clip": c["id"], "score": _score(m), "views": m.get("views", 0),
+                    "account": post.get("account_id"), "at": post.get("due") or 0,
                     "likes": m.get("likes", 0), "hook": c.get("hook", ""), "title": c.get("title", ""),
                     "style": (c.get("guard") or {}).get("hook_style", ""), "streamer_id": c.get("streamer_id"),
                     "platform": m.get("platform")})
@@ -195,3 +197,44 @@ def prompt_extra(style: str) -> str:
         lines.append("Hooks that got the most views on this account (match their energy, don't copy them): "
                      + " | ".join(hooks))
     return "\n".join(lines)
+
+
+# ── when to post ─────────────────────────────────────────────────────────────────────────────────────────
+
+WINDOWS = list(range(9, 23, 2))          # 2-hour windows starting 9:00, 11:00 ... 21:00 (local time)
+
+
+def hour_stats(account_id: str) -> dict[int, dict]:
+    """How posts did by the 2-hour window they went out in, for one account: {start_hour: {"n", "lift"}}."""
+    from datetime import datetime
+
+    rs = [r for r in results() if r.get("account") == account_id and r.get("at")]
+    # against this account's average post, so a window nobody tried (counted as average) can't outrank a proven one
+    mean = (sum(r["score"] for r in rs) / len(rs)) if rs else 1.0
+    rel = {r["post"]: r["score"] / (mean or 1.0) for r in rs}
+    out = {h: {"n": 0, "lift": 1.0} for h in WINDOWS}
+    groups: dict[int, list[float]] = {}
+    for r in rs:
+        h = datetime.fromtimestamp(r["at"]).hour
+        w = max([x for x in WINDOWS if x <= h] or [WINDOWS[0]])
+        groups.setdefault(w, []).append(rel[r["post"]])
+    for w, v in groups.items():
+        out[w] = {"n": len(v), "lift": round(sum(v) / len(v), 2)}
+    return out
+
+
+def best_hours(account_id: str, target: int, day_seed: int = 0) -> list[float] | None:
+    """The local hours to post at for this account, best windows first, once there's enough to go on (8+ posts
+    with views). Windows with few posts get a small bonus so they keep getting tried; one slot in four is
+    sometimes spent on a random window to keep learning. None = not enough data yet (spread evenly)."""
+    st = hour_stats(account_id)
+    if sum(v["n"] for v in st.values()) < 8 or target <= 0:
+        return None
+    rng = random.Random(f"{account_id}:{day_seed}")
+    score = {h: v["lift"] + 0.25 / (1 + v["n"]) ** 0.5 for h, v in st.items()}
+    order = sorted(score, key=lambda h: -score[h])
+    pick = order[:target]
+    if len(order) > target and rng.random() < 0.25:
+        pick[-1] = rng.choice(order[target:])
+    # the middle of each window, with a few minutes of jitter so posts don't land on the hour
+    return sorted(h + 1 + rng.uniform(-0.4, 0.4) for h in pick)

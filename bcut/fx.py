@@ -19,14 +19,21 @@ import numpy as np
 
 from . import config, db, media
 
-DEFAULTS = {"tighten": True, "cold_open": True, "punch": True, "sfx": True, "loop": True}
+DEFAULTS = {"tighten": True, "cold_open": True, "punch": True, "sfx": True, "loop": True, "original": True}
 LABELS = {
     "tighten": "Cut dead air between sentences",
     "cold_open": "Open on the best moment, then rewind",
     "punch": "Punch-in zooms on big moments",
     "sfx": "Sound hits (boom, whoosh, rewind)",
     "loop": "Seamless loop at the end",
+    "original": "Freeze-frame callout on the big moment and a colour grade (makes a repost your own edit)",
 }
+FREEZE = 0.7         # seconds the picture holds on the big moment
+CALLOUTS = ["WAIT WHAT", "HOLD UP", "LOOK AT HIM", "NAH NO WAY", "HE REALLY DID THAT", "WATCH THIS"]
+
+
+def default_callout(seed: str = "") -> str:
+    return CALLOUTS[sum(map(ord, seed or "x")) % len(CALLOUTS)]
 BUNDLED = Path(__file__).with_name("sfx")
 HOP = 0.05          # analysis step, seconds
 
@@ -136,7 +143,25 @@ def plan(src: Path, start: float, end: float, words: list[dict], has_audio: bool
                 inside = [p for p in pieces if p[0] - 0.01 <= c0 and c1 <= p[1] + 0.01]
                 if inside:
                     cold = [round(c0, 3), round(c1, 3)]
-    return {"pieces": pieces, "cold": cold, "removed": round((end - start) - total, 2)}
+    freeze = None
+    if st.get("original") and has_audio and total >= 12 and len(curve) > 40:
+        # the loudest half second in the second half of the clip: the moment to freeze on
+        win = int(0.5 / HOP)
+        sm = np.convolve(curve, np.ones(win) / win, mode="same")
+        order = np.argsort(sm)[::-1]
+        for i in order[:200]:
+            t = start + i * HOP
+            if sm[i] < float(np.median(curve)) + 4:
+                break
+            rel = sum(min(b, t) - a for a, b in pieces if a < t)
+            if rel < 0.35 * total or rel > total - 2.0:
+                continue
+            if cold and cold[0] - 0.5 <= t <= cold[1] + 0.5:
+                continue
+            if any(a + 1.0 <= t <= b - 1.0 for a, b in pieces):
+                freeze = round(float(t), 3)
+                break
+    return {"pieces": pieces, "cold": cold, "freeze": freeze, "removed": round((end - start) - total, 2)}
 
 
 # ── making the tightened file ────────────────────────────────────────────────────────────────────────────
@@ -162,15 +187,30 @@ def build(src: Path, edit: dict, out: Path, has_audio: bool, loop: bool) -> dict
         joins += [rewind[0], rewind[1]]
     else:
         rewind = None
+    fz = edit.get("freeze")
+    freeze = None
+    body = []
     for a, b in pieces:
-        if timeline:
-            joins.append(round(t, 3))
+        if fz and a + 0.5 < fz < b - 0.5:
+            body += [("seg", a, fz), ("freeze", fz, fz + 0.1), ("seg", fz, b)]
+        else:
+            body.append(("seg", a, b))
+    after_freeze = False
+    for kind, a, b in body:
+        if kind == "freeze":
+            freeze = [round(float(t), 3), round(float(t) + FREEZE, 3)]
+            t += FREEZE
+            after_freeze = True
+            continue
+        if timeline and not after_freeze:
+            joins.append(round(t, 3))            # a real cut (dead air taken out): the camera may reframe
+        after_freeze = False
         timeline.append([a, b, round(t, 3)])
         t += b - a
     dur = t
     fl = []
     vs, as_ = [], []
-    allp = parts + [("seg", a, b) for a, b in pieces]
+    allp = parts + body
     # each piece is its own input, opened at its own spot: only that stretch gets decoded (a single input
     # split many ways would hold every frame in memory until its turn)
     inputs: list[str] = []
@@ -180,13 +220,19 @@ def build(src: Path, edit: dict, out: Path, has_audio: bool, loop: bool) -> dict
         if kind == "seg":
             fl.append(f"[{i}:v]trim=0:{d:.3f},setpts=PTS-STARTPTS,fps=30,format=yuv420p,setsar=1[v{i}]")
             if has_audio:
-                fl.append(f"[{i}:a]atrim=0:{d:.3f},asetpts=PTS-STARTPTS,aresample=48000[a{i}]")
+                fl.append(f"[{i}:a]atrim=0:{d:.3f},asetpts=PTS-STARTPTS,aresample=48000,"
+                          f"aformat=sample_rates=48000:channel_layouts=stereo[a{i}]")
+        elif kind == "freeze":  # the picture holds on the big moment; the sound drops out (the scratch fills it)
+            fl.append(f"[{i}:v]trim=0:0.04,setpts=PTS-STARTPTS,fps=30,format=yuv420p,setsar=1,"
+                      f"tpad=stop_mode=clone:stop_duration={FREEZE},trim=0:{FREEZE}[v{i}]")
+            if has_audio:
+                fl.append(f"anullsrc=r=48000:cl=stereo,atrim=0:{FREEZE},asetpts=PTS-STARTPTS[a{i}]")
         else:   # rewind: the end of the cold open played backwards, fast
             fl.append(f"[{i}:v]trim=0:{d:.3f},setpts=PTS-STARTPTS,reverse,setpts=PTS/{REWIND_SPEED},fps=30,"
                       f"format=yuv420p,setsar=1[v{i}]")
             if has_audio:
                 fl.append(f"[{i}:a]atrim=0:{d:.3f},asetpts=PTS-STARTPTS,areverse,atempo=1.5,atempo=2,"
-                          f"volume=0.35,aresample=48000[a{i}]")
+                          f"volume=0.35,aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo[a{i}]")
         vs.append(f"[v{i}]")
         as_.append(f"[a{i}]")
     n = len(vs)
@@ -213,7 +259,7 @@ def build(src: Path, edit: dict, out: Path, has_audio: bool, loop: bool) -> dict
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0 or not out.exists():
         raise RuntimeError("Edit pass failed: " + " | ".join(p.stderr.strip().splitlines()[-3:]))
-    return {"dur": round(dur, 3), "timeline": timeline, "joins": joins, "rewind": rewind,
+    return {"dur": round(dur, 3), "timeline": timeline, "joins": joins, "rewind": rewind, "freeze": freeze,
             "cold_len": round(cold[1] - cold[0], 3) if cold else 0.0}
 
 
@@ -242,6 +288,7 @@ def events(file: Path, start: float, dur: float, built: dict, st: dict, has_audi
             lo = int(0.6 / HOP)
             hi = len(curve) - int(1.0 / HOP)
             rw = built.get("rewind")
+            fzw = built.get("freeze")
             limit = max(1, int(dur / 7))
             for i in order:
                 if curve[i] < med + 8 or len(chosen) >= limit:
@@ -251,16 +298,25 @@ def events(file: Path, start: float, dur: float, built: dict, st: dict, has_audi
                 t = i * HOP
                 if rw and rw[0] - 0.4 <= t <= rw[1] + 0.3:
                     continue
+                if fzw and fzw[0] - 1.5 <= t <= fzw[1] + 1.0:
+                    continue
                 chosen.append(i)
             for k, i in enumerate(sorted(chosen, key=lambda j: -curve[j])):
                 t = round(float(max(0.0, i * HOP - 0.15)), 3)       # land just before the peak
                 big = bool(k == 0 and curve[i] > med + 12)
                 punches.append({"t": t, "zoom": 1.16 if big else 1.1, "shake": big})
+            if fzw:      # the freeze pushes in on the moment
+                punches.append({"t": fzw[0], "zoom": 1.2, "shake": False})
             punches.sort(key=lambda p: p["t"])
     if st["sfx"]:
         for p in punches:
             sounds.append({"t": round(max(0.0, p["t"] - 0.02), 3), "name": "boom" if p["shake"] else "hit",
                            "db": -9 if p["shake"] else -15})
+        fzw = built.get("freeze")
+        if fzw:
+            sounds = [x for x in sounds if not (fzw[0] - 0.1 <= x["t"] <= fzw[0] + 0.1)]
+            sounds.append({"t": round(fzw[0], 3), "name": "rewind", "db": -8})     # the record scratch
+            sounds.append({"t": round(max(0.0, fzw[1] - 0.12), 3), "name": "whoosh", "db": -13})
         rw = built.get("rewind")
         if rw:
             sounds.append({"t": max(0.0, rw[0] - 0.05), "name": "rewind", "db": -10})

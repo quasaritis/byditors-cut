@@ -96,6 +96,18 @@ CREATE TABLE IF NOT EXISTS events (
     text TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS campaigns (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    site TEXT NOT NULL DEFAULT '',                      -- Content Rewards, Vyro, Clipster, Discord...
+    url TEXT NOT NULL DEFAULT '',                       -- the campaign page (where clip links are submitted)
+    brief TEXT NOT NULL DEFAULT '',                     -- the brief as pasted
+    rules_json TEXT NOT NULL DEFAULT '{}',              -- rates, minimum views, cap, length, tags, mention, banned
+    streamers_json TEXT NOT NULL DEFAULT '[]',          -- streamer ids whose clips count for it
+    status TEXT NOT NULL DEFAULT 'active',              -- active | paused | ended
+    ends REAL NOT NULL DEFAULT 0,
+    created REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS clips_job ON clips(job_id);
 CREATE INDEX IF NOT EXISTS posts_due ON posts(status, due);
 """
@@ -110,7 +122,21 @@ def conn() -> sqlite3.Connection:
             _conn.row_factory = sqlite3.Row
             _conn.execute("PRAGMA journal_mode=WAL")
             _conn.executescript(SCHEMA)
+            _migrate(_conn)
         return _conn
+
+
+# columns added after release: (table, column, definition)
+COLUMNS = [
+    ("streamers", "captions", "TEXT NOT NULL DEFAULT 'auto'"),        # auto | hinglish | english
+]
+
+
+def _migrate(c: sqlite3.Connection) -> None:
+    for table, col, ddl in COLUMNS:
+        have = {r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()}
+        if col not in have:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
 
 
 def new_id(prefix: str = "") -> str:

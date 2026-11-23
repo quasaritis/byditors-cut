@@ -108,8 +108,14 @@ def post_one(p: dict) -> None:
 
 # ---------------------------------------------------------------- autopilot: N posts a day per account
 
-def day_slots(day, target: int) -> list[float]:
-    """`target` posting times spread evenly over the waking part of `day` (after quiet hours, before 23:00)."""
+def day_slots(day, target: int, account_id: str = "") -> list[float]:
+    """`target` posting times on `day`: the windows that got this account the most views, once it has enough
+    posts with views; until then spread evenly over the waking part of the day (after quiet hours, before 23:00)."""
+    if account_id:
+        hours = learn.best_hours(account_id, target, day.toordinal())
+        if hours:
+            base = datetime.combine(day, datetime.min.time()).timestamp()
+            return [base + h * 3600 for h in hours]
     start_h = 9
     if config.QUIET_HOURS and "-" in config.QUIET_HOURS:
         try:
@@ -158,7 +164,7 @@ def autopilot_tick(now: float | None = None) -> list[dict]:
         today = datetime.fromtimestamp(now).date()
         for day in (today, today + timedelta(days=1)):
             on_day = [t for t in taken if datetime.fromtimestamp(t).date() == day]
-            for slot in day_slots(day, target):
+            for slot in day_slots(day, target, acc["id"]):
                 if not pool or len(on_day) >= target:
                     break
                 if slot < now + 120 or any(abs(t - slot) < 30 * 60 for t in taken):

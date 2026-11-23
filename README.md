@@ -22,7 +22,9 @@ This started from [PeakCut](https://github.com/haziqahmedqasmi/PeakCut) and adds
 | Two people | Stack | Stack **or active-speaker cuts** (mouth movement + voice, hard cuts like a podcast editor, caption colour per speaker) |
 | "Clip that" | Twitch chat command | The streamer **saying** "clip that / clip it / clip kar" (Hindi too) or **chat spamming** "clip it", on YouTube, Twitch and Kick |
 | Fixing a clip | – | **Trim editor** in the inbox: drag start and end over the original (15 s either side), change the hook and layout, render again |
-| Learning | – | Reads your **views, likes and comments** back from Instagram and YouTube every 6 hours: winners' streamers and hook styles post first, hook styles are **A/B tested**, the AI sees your best hooks |
+| Campaigns | – | **Campaign mode**: paste a Content Rewards / Vyro / Clipster brief, the AI reads the rules; clips follow its length, tags and bans, and views turn into an **earnings estimate** with links ready to submit |
+| Captions | English | Hinglish as spoken **or English** (translated), per link or per streamer; AI spell-check for Hinglish |
+| Learning | – | Reads your **views, likes and comments** back from Instagram and YouTube every 6 hours: winners' streamers and hook styles post first, hook styles are **A/B tested**, **best posting time** learned per account, the AI sees your best hooks |
 | Languages | Parakeet (English-first) | **faster-whisper**: 99 languages, Hindi and Hinglish included, GPU if available |
 | Posting | YouTube, Instagram, TikTok | + **Facebook Reels**, a last Guard check before every post, quiet hours, per-account spacing and caps |
 
