@@ -235,32 +235,55 @@ def find_cams(dets, imgs, force: bool = False) -> list[dict]:
 
 # ── following people ─────────────────────────────────────────────────────────────────────────────────────
 
-def _camera(times: np.ndarray, target: np.ndarray, half_free: float, cuts: list[float], lo: float, hi: float
-            ) -> np.ndarray:
-    """A camera operator: hold still while the subject stays near the middle; when they drift out of the
-    middle, glide over (critically damped) to re-centre; jump on a picture cut. Values are crop centres."""
+def _camera(times: np.ndarray, target: np.ndarray, half_free: float, cuts: list[float], lo: float, hi: float,
+            vmax: float | None = None) -> np.ndarray:
+    """A camera operator. Holds still while the subject stays near the middle and ignores quick lunges; when the
+    subject has really moved, glides over (critically damped, never faster than `vmax` per second, never
+    overshooting); when they've gone right across the frame, cuts straight there instead of whipping over; and
+    jumps on a picture cut. Values are crop centres."""
     out = np.zeros_like(target)
+    if not len(target):
+        return out
+    span = max(1e-6, hi - lo)
+    vmax = vmax if vmax is not None else max(0.15, 2.5 * half_free)
+    far = max(3.0 * half_free, 0.25 * span)        # this far off for a while: cut rather than pan
     pos, vel = float(target[0]), 0.0
     moving = False
-    omega = 7.0                     # how fast the glide settles (~0.6 s)
+    off_since = None
+    omega = 4.0                                     # settles in about a second: calm, not twitchy
     ci = 0
     cuts = sorted(cuts)
     for i, t in enumerate(times):
-        dt = times[i] - times[i - 1] if i else 0.0
+        dt = float(times[i] - times[i - 1]) if i else 0.0
         while ci < len(cuts) and cuts[ci] <= t:
             ci += 1
-            pos, vel, moving = float(target[i]), 0.0, False   # new shot: frame it straight away
-        err = target[i] - pos
+            pos, vel, moving, off_since = float(target[i]), 0.0, False, None   # new shot: frame it straight away
+        goal = float(target[i])
+        err = goal - pos
         if abs(err) > half_free:
-            moving = True
-        if moving:
-            # critically damped spring towards the subject
-            acc = omega * omega * err - 2 * omega * vel
-            vel += acc * dt
-            pos += vel * dt
-            if abs(err) < 0.15 * half_free and abs(vel) < 0.02:
-                moving = False
-                vel = 0.0
+            off_since = t if off_since is None else off_since
+            held = t - off_since
+            if abs(err) > far and held >= 0.5:
+                pos, vel, moving, off_since = goal, 0.0, False, None           # a clean cut, not a whip pan
+            elif held >= 0.35:
+                moving = True                                                    # a real move, not a lunge
+        else:
+            off_since = None
+        if moving and dt > 0:
+            # small steps, so the spring can't overshoot or swing back and forth
+            n = max(1, int(np.ceil(dt / 0.01)))
+            h = dt / n
+            for _ in range(n):
+                e = goal - pos
+                acc = omega * omega * e - 2 * omega * vel
+                vel += acc * h
+                vel = max(-vmax, min(vmax, vel))
+                if (goal - pos) * (goal - (pos + vel * h)) < 0:
+                    pos, vel = goal, 0.0                                         # arrived: stop, no overshoot
+                    break
+                pos += vel * h
+            if abs(goal - pos) < 0.15 * half_free and abs(vel) < 0.02:
+                moving, vel = False, 0.0
         out[i] = min(hi, max(lo, pos))
     return out
 
@@ -345,7 +368,7 @@ def _no_half_faces(ts, dets, cam, l, r, cw, lo, hi, cuts) -> np.ndarray:
         want[i] = c
     if np.allclose(want, cam):
         return cam
-    return np.clip(_camera(ts, _smooth(want, 2), 0.06 * cw, cuts, lo, hi), lo, hi)
+    return np.clip(_camera(ts, _smooth(want, 2), 0.06 * cw, cuts, lo, hi, vmax=1.2 * cw), lo, hi)
 
 
 def _two_people(dets, cw: float) -> tuple[bool, list[tuple[float, float, float, float]]]:
@@ -544,12 +567,13 @@ def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text=None, voi
     if want == "face" or (want == "auto" and share >= 0.3):
         cx, l, r = _subject_track(ts, dets, cw)
         lo, hi = cw / 2, 1 - cw / 2
-        cam = _camera(ts, _smooth(cx), 0.22 * cw, rel_cuts, lo, hi)
-        # never cut into the face: if the face pokes out of the window, slide the window to take it in
+        cam = _camera(ts, _smooth(cx), 0.22 * cw, rel_cuts, lo, hi, vmax=0.9 * cw)
+        # the face must stay in: where it would poke out, ask the camera to move there (smoothly, like any move)
         margin = 0.04 * cw
-        cam = np.maximum(cam, np.minimum(r - cw / 2 + margin, hi))
-        cam = np.minimum(cam, np.maximum(l + cw / 2 - margin, lo))
-        cam = np.clip(cam, lo, hi)
+        want = np.maximum(cam, np.minimum(r - cw / 2 + margin, hi))
+        want = np.clip(np.minimum(want, np.maximum(l + cw / 2 - margin, lo)), lo, hi)
+        if not np.allclose(want, cam):
+            cam = _camera(ts, _smooth(want, 2), 0.05 * cw, rel_cuts, lo, hi, vmax=1.2 * cw)
         cam = _no_half_faces(ts, dets, cam, l, r, cw, lo, hi, rel_cuts)
         return {"mode": "face", "track": [[round(float(t), 3), round(float(x), 4)] for t, x in zip(ts, cam)]}
     return {"mode": "wide"}

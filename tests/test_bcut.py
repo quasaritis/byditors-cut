@@ -781,3 +781,18 @@ def test_youtube_live_chat_lines_are_read():
     assert _yt_chat_text(line) == "CLIP IT :fire:" and CHAT_CALL.search(_yt_chat_text(line))
     assert _yt_chat_text(b'{"replayChatItemAction": {"actions": [{"addLiveChatTickerItemAction": {}}]}}') == ""
     assert _yt_chat_text(b"not json") == ""
+
+
+def test_virtual_camera_never_swings_back_and_forth():
+    from bcut import reframe
+    ts = np.arange(0, 10, 0.25)
+    rng = np.random.default_rng(3)
+    for target in (np.where(ts < 2, 0.3, 0.7),                      # walks right across: one clean cut
+                   np.where(ts < 2, 0.3, 0.42),                     # steps aside: one smooth glide
+                   0.5 + 0.15 * rng.standard_normal(len(ts)),       # bouncing around: stays calm
+                   0.3 + 0.04 * ts):                                # walks slowly: follows
+        cam = reframe._camera(ts, reframe._smooth(target), 0.05, [], 0.1, 0.9, vmax=0.4)
+        d = np.diff(cam)
+        flips = int(((d[1:] * d[:-1]) < -1e-9).sum())
+        assert flips <= 2, (target[:6], np.round(cam, 3))
+        assert np.all(np.abs(d[np.abs(d) < 0.2]) <= 0.4 * 0.25 + 1e-6)   # glides respect the speed limit
