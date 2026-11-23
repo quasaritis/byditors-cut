@@ -338,7 +338,7 @@ def learned():
     for a in db.query("SELECT id, platform, name FROM accounts"):
         st = learn.hour_stats(a["id"])
         n = sum(v["n"] for v in st.values())
-        best = max((h for h in st if st[h]["n"] >= 2), key=lambda h: st[h]["lift"], default=None)
+        best = max((h for h in st if st[h]["n"] >= 1), key=lambda h: st[h]["lift"], default=None)
         times[a["id"]] = {"name": a["name"], "platform": a["platform"], "posts": n,
                           "best": best, "lift": st[best]["lift"] if best is not None else None,
                           "learning": n >= 8}
