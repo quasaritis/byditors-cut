@@ -665,6 +665,28 @@ def save_ai(b: dict = Depends(_body)):
     return ai.public_settings()
 
 
+@app.post("/api/settings/ai/backup")
+def save_ai_backup(b: dict = Depends(_body)):
+    """The backup AI: takes over while the main one's free daily limit is used up."""
+    cur = db.kv_get("ai_backup", {}) or {}
+    if b.get("provider") and b["provider"] not in ai.PROVIDERS:
+        raise HTTPException(400, "Unknown AI service")
+    for k in ("provider", "model", "base_url"):
+        if k in b:
+            cur[k] = str(b[k]).strip()
+    if b.get("key"):
+        cur["key"] = str(b["key"]).strip()
+    if not cur.get("provider"):
+        cur = {}
+    db.kv_set("ai_backup", cur)
+    if cur and b.get("test"):
+        try:
+            ai.test(ai.backup())
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(400, f"Saved, but the test failed: {str(e)[:200]}")
+    return ai.public_settings()
+
+
 @app.post("/api/settings/ai/models")
 def ai_models(b: dict = Depends(_body)):
     """List the models a key can use. Uses the key typed in the form, or the saved one."""

@@ -607,6 +607,13 @@ async function viewSettings() {
       <div class="wide"><label class="f" for="ai-m">Model</label><div style="display:flex;gap:8px"><input class="field" id="ai-m" name="model" list="ai-list" value="${esc(d.ai.model)}" placeholder="Press Find models, or type a model id"><datalist id="ai-list"></datalist><button type="button" class="btn" id="ai-find">Find models</button></div><p class="hint">Fast, cheap models are listed first. That's the right kind for picking clips.</p></div>
       <div class="wide"><label class="f" for="ai-b">Address (custom service only)</label><input class="field" id="ai-b" name="base_url" value="${esc(d.ai.base_url)}" placeholder="https://…/v1"></div>
       <div class="wide acts"><button class="btn primary">Save and test</button></div></form></div></div>
+  <div class="sect"><div><h2>Backup AI</h2><p>Free AI keys have a daily limit. When the AI above runs out, this one takes over until the limit resets, then it switches back by itself.</p></div>
+    <div class="panel"><form id="f-aib" class="fgrid">
+      ${d.ai.resting_until ? `<p class="wide" style="margin:0 0 4px"><span class="pill review">In use now</span> The main AI is out of free quota until ${new Date(d.ai.resting_until * 1000).toLocaleTimeString([], {hour: "numeric", minute: "2-digit"})}.</p>` : ""}
+      <div><label class="f" for="aib-p">Service</label><select class="field" id="aib-p" name="provider"><option value="">None</option>${Object.entries(d.ai.providers).filter(([k]) => k !== "custom").map(([k,l]) => `<option value="${k}" ${(d.ai.backup.provider || (d.ai.backup.has_key ? "" : "gemini")) === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+      <div><label class="f" for="aib-k">API key</label><input class="field" id="aib-k" name="key" type="password" autocomplete="off" placeholder="${d.ai.backup.has_key ? "Saved. Paste a new one to replace it." : "Paste your key"}"><p class="hint">Free Gemini key, no card: <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></p></div>
+      <div class="wide"><label class="f" for="aib-m">Model</label><input class="field" id="aib-m" name="model" value="${esc(d.ai.backup.model)}" placeholder="Leave empty for the usual one (${esc(d.ai.defaults.gemini || "")})"></div>
+      <div class="wide acts"><button class="btn primary">Save and test</button>${d.ai.backup.has_key ? `<button type="button" class="btn ghost" id="aib-off">Remove backup</button>` : ""}</div></form></div></div>
   <div class="sect"><div><h2>Editing</h2><p>What the editor does to every clip. Drop your own sounds named boom, hit, whoosh, rewind or pop (.mp3/.wav/.ogg) into data\\sfx to use them instead of the built-in ones.</p></div>
     <div class="panel" id="edpanel"><p class="muted" style="margin:0">Loading…</p></div></div>
   <div class="sect"><div><h2>This PC</h2><p>Byditors Cut only works while this PC is on. These keep it running.</p></div>
@@ -668,6 +675,8 @@ async function viewSettings() {
     if (!$("#ai-m").value && r.models.length) $("#ai-m").value = r.models[0];
     toast(`${r.models.length} models found. Pick one in the Model box.`);
   });
+  $("#f-aib").onsubmit = e => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.test = !!b.provider; act(e.submitter, async () => { await api("/api/settings/ai/backup", {method: "POST", body: b}); viewSettings(); }, "Backup saved and working"); };
+  if ($("#aib-off")) $("#aib-off").onclick = e => act(e.currentTarget, async () => { await api("/api/settings/ai/backup", {method: "POST", body: {provider: ""}}); viewSettings(); }, "Backup removed");
   $("#f-ai").onsubmit = e => { e.preventDefault(); const b = Object.fromEntries(new FormData(e.target)); b.test = !!b.provider; act(e.submitter, async () => { await api("/api/settings/ai", {method: "POST", body: b}); loadState(); }, "Saved and working"); };
 }
 

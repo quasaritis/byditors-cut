@@ -81,6 +81,22 @@ CLIP_CALL = re.compile(r"\b(clip (?:that|it|this|dat|kar\w*|kr\w*|bana\w*|le\w*)
 CHAT_CALL = re.compile(r"(?i)(^|\s)(!clip\b|clip (?:it|that|this|dat|kar\w*|kr\w*)|clip\s*$|clippp*\b)")
 
 
+def _yt_chat_text(line: bytes) -> str:
+    """One line of yt-dlp's live_chat.json → the message text ("" for joins, polls and the like)."""
+    try:
+        d = json.loads(line)
+        for act in d.get("replayChatItemAction", {}).get("actions", []):
+            item = act.get("addChatItemAction", {}).get("item", {})
+            r = item.get("liveChatTextMessageRenderer") or item.get("liveChatPaidMessageRenderer") or {}
+            runs = (r.get("message") or {}).get("runs") or []
+            text = "".join(x.get("text") or (x.get("emoji") or {}).get("shortcuts", [""])[0] for x in runs)
+            if text:
+                return text
+    except (ValueError, AttributeError, IndexError, TypeError):
+        pass
+    return ""
+
+
 class Session:
     def __init__(self, streamer: dict | None, url: str):
         self.streamer = streamer
@@ -225,8 +241,52 @@ class Session:
                                       "read": False})
 
     # ------------------------------------------------------------ chat
+    def _youtube_chat(self):
+        """YouTube live chat, read the way the page does (yt-dlp follows it as it scrolls); no API key and none
+        of your YouTube upload quota is used."""
+        import subprocess
+        import sys
+
+        out = self.dir / "chat"
+        while self.running:
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "yt_dlp", "--skip-download", "--write-subs", "--sub-langs", "live_chat",
+                 "--no-warnings", "-q", "-o", str(out), self.url],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=0x08000000 if sys.platform == "win32" else 0)
+            pos, seen = 0, None
+            try:
+                while self.running and proc.poll() is None:
+                    time.sleep(2)
+                    f = seen or next(iter(sorted(self.dir.glob("chat.live_chat.json*"))), None)
+                    if not f or not f.exists():
+                        continue
+                    seen = f
+                    with open(f, "rb") as fh:
+                        fh.seek(pos)
+                        data = fh.read()
+                    cut = data.rfind(b"\n")
+                    if cut < 0:
+                        continue
+                    pos += cut + 1
+                    for line in data[:cut].splitlines():
+                        text = _yt_chat_text(line)
+                        if text:
+                            self.chat.append((self.now(), text[:200]))
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+            if self.running:
+                time.sleep(30)      # the stream may still be starting; try again
+
     def _chat(self):
         plat = media.platform_of(self.url)
+        if plat == "youtube":
+            try:
+                self._youtube_chat()
+            except Exception:  # noqa: BLE001
+                pass
+            return
         name = (re.findall(r"(?:twitch\.tv|kick\.com)/([^/?#]+)", self.url) or [""])[0].lower()
         if not name:
             return

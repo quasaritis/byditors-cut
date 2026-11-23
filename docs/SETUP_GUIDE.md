@@ -102,6 +102,14 @@ pick the biggest model in the list (for example `llama-3.3-70b-versatile`) and p
 Byditors Cut sees them and doesn't add a second set on top. It keeps the video's own subtitles and only adds the
 hook, placed where it doesn't cover any text or face.
 
+### A backup AI for when the free limit runs out
+
+Free keys have a daily limit (Groq's free tier allows 200,000 tokens a day, roughly 20–30 clips).
+In **Guard & settings → Backup AI**, pick **Google Gemini**, paste a free key from
+**https://aistudio.google.com/apikey** and press **Save and test**. When the main AI runs out, the backup takes over
+until the limit resets, then it switches back by itself. The activity log says when it switches.
+
+
 ---
 
 ## 4. Captions and music removal
@@ -287,8 +295,8 @@ Until TikTok reviews your app, posts are visible only to you. Submit it for revi
 
 During a live you can also press **Clip last 45 s** on Today to grab the last 45 seconds by hand.
 
-**"Clip that"**: when the streamer says "clip that", "clip it" or "clip kar/karo", or chat spams "clip it" (Twitch
-and Kick), the moment before it is clipped right away. Saying it needs Speech to text installed. To switch the
+**"Clip that"**: when the streamer says "clip that", "clip it" or "clip kar/karo", or chat spams "clip it" (YouTube,
+Twitch and Kick), the moment before it is clipped right away. Saying it needs Speech to text installed. To switch the
 voice trigger off, set `BCUT_LIVE_VOICE_TRIGGER=0` in `.env`.
 
 ---

@@ -741,3 +741,43 @@ def test_hindi_captions_get_english_words_spelled_in_english(monkeypatch):
     monkeypatch.setattr(ai, "ask_json", lambda *a, **k: {"w": ["only one"]})       # wrong count: keep as is
     assert [w["w"] for w in brain.fix_spellings(words, log=lambda *a: None)] == [w["w"] for w in words]
     assert transcribe.model_name("cuda") == "large-v3-turbo" or transcribe.config.WHISPER_MODEL != "auto"
+
+
+def test_backup_ai_takes_over_when_the_free_daily_limit_runs_out(monkeypatch):
+    import httpx
+    from bcut import ai
+    db.kv_set("ai", {"provider": "groq", "model": "openai/gpt-oss-120b", "key": "gsk_main"})
+    db.kv_set("ai_backup", {"provider": "gemini", "model": "", "key": "gm_backup"})
+    db.kv_set("ai_rest", {})
+    used = []
+
+    def fake(system, user, max_tokens, temperature, s=None):
+        used.append(s["provider"])
+        if s["provider"] == "groq":
+            req = httpx.Request("POST", "https://api.groq.com/x")
+            resp = httpx.Response(429, request=req, text='{"error":{"message":"Rate limit reached for model on '
+                                  'tokens per day (TPD): Limit 200000. Please try again in 1h12m3.5s."}}')
+            raise httpx.HTTPStatusError("429", request=req, response=resp)
+        return {"ok": s["provider"]}
+    monkeypatch.setattr(ai, "_ask_json", fake)
+    assert ai.ask_json("s", "u") == {"ok": "gemini"}
+    assert used == ["groq", "gemini"]
+    assert 3600 < ai.resting() - time.time() < 4500           # back to Groq when its limit resets
+    assert ai.ask_json("s", "u") == {"ok": "gemini"} and used[-1] == "gemini" and used.count("groq") == 1
+    db.kv_set("ai_rest", {"until": time.time() - 1})
+    used.clear()
+    ai.ask_json("s", "u")
+    assert used[0] == "groq"
+    for k in ("ai", "ai_backup", "ai_rest"):
+        db.kv_set(k, {})
+
+
+def test_youtube_live_chat_lines_are_read():
+    import json
+    from bcut.live import CHAT_CALL, _yt_chat_text
+    line = json.dumps({"replayChatItemAction": {"actions": [{"addChatItemAction": {"item": {
+        "liveChatTextMessageRenderer": {"message": {"runs": [{"text": "CLIP IT "}, {"emoji": {"shortcuts": [":fire:"]}}]}}}}}]},
+        "videoOffsetTimeMsec": "1200", "isLive": True}).encode()
+    assert _yt_chat_text(line) == "CLIP IT :fire:" and CHAT_CALL.search(_yt_chat_text(line))
+    assert _yt_chat_text(b'{"replayChatItemAction": {"actions": [{"addLiveChatTickerItemAction": {}}]}}') == ""
+    assert _yt_chat_text(b"not json") == ""
