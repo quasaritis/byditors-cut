@@ -62,7 +62,7 @@ DATA = Path(_get("BCUT_DATA", str(ROOT / "data"))).expanduser().resolve()
 PUBLIC_URL = _get("BCUT_PUBLIC_URL", f"http://{HOST}:{PORT}")
 
 # ---- speech to text (runs on this PC) ----
-WHISPER_MODEL = _get("BCUT_WHISPER_MODEL", "small")          # tiny, base, small, medium, large-v3, distil-large-v3
+WHISPER_MODEL = _get("BCUT_WHISPER_MODEL", "auto")    # auto (turbo on a GPU, small on CPU), small, medium, large-v3-turbo
 WHISPER_DEVICE = _get("BCUT_WHISPER_DEVICE", "auto")         # auto, cpu, cuda
 WHISPER_LANGUAGE = _get("BCUT_WHISPER_LANGUAGE", "")         # empty = detect (handles Hindi / Hinglish)
 

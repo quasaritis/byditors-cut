@@ -92,7 +92,9 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     out_dir = config.DATA / "clips" / job["id"]
     out = out_dir / f"{cid}.mp4"
     out_dir.mkdir(parents=True, exist_ok=True)
-    cw = transcribe.words_between(words, c["start"], c["end"])
+    # the clip plus 15 s either side (for the trim editor), with Hindi/Hinglish spelling fixed once
+    near = brain.fix_spellings(transcribe.words_between(words, c["start"] - 15, c["end"] + 15), log)
+    cw = transcribe.words_between(near, c["start"], c["end"])
     credit = credit_for(streamer, info)
     made = produce(src, out, c["start"], c["end"], probe["width"], probe["height"], probe["has_audio"], cw,
                    c.get("hook", ""), credit, (streamer or {}).get("layout", "auto"), log=log)
@@ -106,7 +108,7 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
             "guard": {}, "verdict": "pending", "state": "new", "created": time.time()}
     report = guard.review({**clip, "file": str(out)}, streamer, info, text, _targets(streamer), c.get("flags"))
     report["layout"] = plan.get("mode")
-    report["edit"] = _edit_info(src, c, probe, transcribe.words_between(words, c["start"] - 15, c["end"] + 15),
+    report["edit"] = _edit_info(src, c, probe, near,
                                 credit, plan)
     report["made"] = made["info"]
     report["cover_at"] = made.get("cover_at")

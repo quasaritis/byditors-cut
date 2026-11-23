@@ -700,7 +700,7 @@ def test_caption_lines_never_overlap_and_words_pop_in_place():
         if ln.startswith("Dialogue: 1,"):
             f = ln.split(",", 9)
             sec = lambda s: int(s[0]) * 3600 + int(s[2:4]) * 60 + float(s[5:])  # noqa: E731
-            pos = re.search(r"\\pos\((\d+),(\d+)\)", f[9]).groups()
+            pos = re.search(r"\\(?:pos|move)\((\d+),(\d+)", f[9]).groups()
             evs.append((sec(f[1]), sec(f[2]), int(pos[1]), int(pos[0]), f[9].rsplit("}", 1)[1]))
     assert evs
     x = 0.0
@@ -711,3 +711,33 @@ def test_caption_lines_never_overlap_and_words_pop_in_place():
         assert len(on) <= 3
         x += 0.01
     assert "\\N" not in "".join(e[4] for e in evs)
+
+
+def test_caption_line_is_centred_from_its_first_word():
+    from bcut import render
+    ws = [{"w": "rush", "s": 0.2, "e": 0.5}, {"w": "karo", "s": 0.5, "e": 0.9}, {"w": "bhai", "s": 0.9, "e": 1.2}]
+    ass = render.build_ass(ws, 0, 2, "", "", {"faces_out": [], "mode": "center"})
+    first = [ln for ln in ass.splitlines() if ln.startswith("Dialogue: 1,0:00:00.20")]
+    assert len(first) == 3                                     # the whole line shows from the first word
+    xs = [int(re.search(r"\\move\((\d+),", ln).group(1)) for ln in first]
+    assert abs((xs[0] + xs[-1]) / 2 - 540) < 60
+
+
+def test_hindi_captions_get_english_words_spelled_in_english(monkeypatch):
+    from bcut import ai, brain, transcribe
+    words = transcribe._hinglish([{"w": "रश", "s": 0, "e": 0.3}, {"w": "करो", "s": 0.3, "e": 0.6},
+                                  {"w": "bro", "s": 0.6, "e": 0.9}])
+    assert words[0]["dv"] == "रश" and "dv" not in words[2]
+    asked = {}
+
+    def fake(system, user, **k):
+        asked["user"] = user
+        return {"w": ["rush", "karo", "bro"]}
+    monkeypatch.setattr(ai, "enabled", lambda: True)
+    monkeypatch.setattr(ai, "ask_json", fake)
+    out = brain.fix_spellings(words, log=lambda *a: None)
+    assert [w["w"] for w in out] == ["rush", "karo", "bro"] and out[0]["s"] == 0
+    assert "रश" in asked["user"]
+    monkeypatch.setattr(ai, "ask_json", lambda *a, **k: {"w": ["only one"]})       # wrong count: keep as is
+    assert [w["w"] for w in brain.fix_spellings(words, log=lambda *a: None)] == [w["w"] for w in words]
+    assert transcribe.model_name("cuda") == "large-v3-turbo" or transcribe.config.WHISPER_MODEL != "auto"

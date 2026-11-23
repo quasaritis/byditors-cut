@@ -212,7 +212,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         times = times[:len(shown)]
         while len(times) < len(shown):
             times.append(times[-1] if times else g[0]["s"])
-        gap = _width(" ", size, ratio) + 0.05 * size
+        gap = _width(" ", size, ratio) + 0.08 * size    # room for the lit word to grow
         ws_px = [_width(w, size, ratio) for w in shown]
         total = sum(ws_px) + gap * (len(shown) - 1)
         fit = min(1.0, MAX_LINE_W / total) if total else 1.0     # one long word: shrink the line to fit
@@ -237,22 +237,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             s1 = min(s1, g_end - start)
             if s1 - s0 < 0.02:
                 continue
-            last = k == len(shown) - 1
+            first, last = k == 0, k == len(shown) - 1
             # fade out only into a pause; straight into the next line it's a clean cut
             out_fade = "\\fad(0,90)" if last and nxt - g_end > 0.25 else ""
-            for j in range(k + 1):
-                pos = f"\\an5\\pos({xs[j]},{y})\\blur0.6{out_fade}"
+            for j in range(len(shown)):
+                pos = f"\\an5\\blur0.6{out_fade}"
+                # the whole line arrives together (quick rise and fade-in), centred
+                pos += f"\\move({xs[j]},{y + 18},{xs[j]},{y},0,140)" if first else f"\\pos({xs[j]},{y})"
+                enter = "\\alpha&HFF&\\t(0,90,\\alpha&H00&)" if first else ""
                 if j == k:
-                    # the word being said arrives: rises a little, overshoots, settles bigger and lit
-                    tag = (f"{pos}\\c{lit_c}\\alpha&HFF&\\fscx{round(sc * .62)}\\fscy{round(sc * .62)}"
-                           f"\\t(0,60,\\alpha&H00&)\\t(0,100,0.5,\\fscx{round(sc * 1.16)}\\fscy{round(sc * 1.16)})"
-                           f"\\t(100,190,1.6,\\fscx{round(sc * 1.08)}\\fscy{round(sc * 1.08)})")
-                elif j == k - 1:
-                    # the word before hands over: back to white and its normal size
-                    tag = (f"{pos}\\c{lit_c}\\fscx{round(sc * 1.08)}\\fscy{round(sc * 1.08)}"
-                           f"\\t(0,120,0.6,\\c{WHITE}\\fscx{sc}\\fscy{sc})")
+                    # the word being said: lit, pops a little bigger, then settles
+                    tag = (f"{pos}{enter}\\c{lit_c}\\fscx{sc}\\fscy{sc}"
+                           f"\\t(0,90,0.5,\\fscx{round(sc * 1.18)}\\fscy{round(sc * 1.18)})"
+                           f"\\t(90,180,1.6,\\fscx{round(sc * 1.1)}\\fscy{round(sc * 1.1)})")
                 else:
-                    tag = f"{pos}\\fscx{sc}\\fscy{sc}"
+                    tag = f"{pos}{enter}\\fscx{sc}\\fscy{sc}"
                 ev.append(f"Dialogue: 1,{_ts(s0)},{_ts(s1)},Cap,,0,0,0,,{{{tag}}}{shown[j]}")
     if credit:
         ev.append(f"Dialogue: 0,{_ts(0)},{_ts(dur)},Credit,,0,0,0,,{_esc(credit)}")

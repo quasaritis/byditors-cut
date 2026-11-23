@@ -110,6 +110,10 @@ In **Guard & settings → Add-ons**:
 
 - **Speech to text**: press **Install**, about 200 MB. It adds word-by-word captions and lets the AI read the
   transcript. Hindi, Hinglish and English all work. It runs on your PC, so the audio never leaves it.
+  With an NVIDIA graphics card it sets the card up by itself (a one-time download of about 1 GB) and uses the
+  large-v3-turbo model, which hears Indian accents and Hinglish far better. Without one it uses the small model.
+  When the AI is connected, Hindi and Hinglish captions are also spell-checked: English words come out in English
+  ("rush", not "rash") and Hindi words the way people type them ("kya", "nahi", "bhai").
 - **Music removal, voice kept**: press **Install**, about 1–2 GB. It strips background songs from a clip and keeps
   the talking.
 - **Song identification** (optional): a key from **https://dashboard.audd.io** names copyrighted songs so they're

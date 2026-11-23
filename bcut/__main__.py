@@ -59,6 +59,35 @@ def _sync_requirements() -> None:
         db.log(f"Couldn't install this update's packages: {str(e)[:200]}", "warn")
 
 
+def _gpu_speech() -> None:
+    """Windows PC with an NVIDIA card but no CUDA libraries: speech to text quietly runs on the processor with a
+    small model. Install the libraries once (about 1 GB) so it can use the card and the much better model."""
+    import subprocess
+
+    if sys.platform != "win32" or not shutil.which("nvidia-smi"):
+        return
+    try:
+        import nvidia.cublas  # noqa: F401
+        import nvidia.cudnn  # noqa: F401
+        return
+    except ImportError:
+        pass
+    try:
+        import ctranslate2
+        if ctranslate2.get_cuda_device_count() < 1:
+            return
+    except Exception:  # noqa: BLE001
+        return
+    db.log("Setting up your NVIDIA card for speech to text (one-time download, about 1 GB)")
+    r = subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--no-input", "nvidia-cublas-cu12",
+                        "nvidia-cudnn-cu12>=9,<10"], capture_output=True, text=True, timeout=3600,
+                       creationflags=0x08000000)
+    if r.returncode == 0:
+        db.log("Speech to text can use your NVIDIA card now: it switches over at the next restart")
+    else:
+        db.log(f"Couldn't set up the NVIDIA card for speech: {(r.stderr or r.stdout)[-200:]}", "warn")
+
+
 def main() -> None:
     url = f"http://{config.HOST}:{config.PORT}"
     background = "--background" in sys.argv
@@ -76,7 +105,7 @@ def main() -> None:
         db.log(f"App folder moved: updated {moved} saved file paths to {config.DATA}")
     db.kv_set("started_at", time.time())
     start_background()
-    threading.Thread(target=_sync_requirements, daemon=True, name="requirements").start()
+    threading.Thread(target=lambda: (_sync_requirements(), _gpu_speech()), daemon=True, name="requirements").start()
     threading.Thread(target=_awake_loop, daemon=True, name="awake").start()
     print(f"\n  {config.APP_NAME} is running → {url}\n  Data folder: {config.DATA}\n"
           f"  Keep this window open (you can minimise it). Close it to stop.\n")

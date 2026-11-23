@@ -390,3 +390,45 @@ def excite_preview(sig: dict, points: int = 120) -> list[float]:
         return []
     idx = np.linspace(0, len(e) - 1, min(points, len(e))).astype(int)
     return [round(float(e[i]), 3) for i in idx]
+
+
+SYSTEM_SPELL = """You fix the spelling of auto-generated captions for Indian streamers, who mix Hindi and English.
+Each input line is: number | the word as the speech engine wrote it | the Devanagari it heard (if any).
+The speech engine writes English words said in a Hindi sentence in Devanagari, and turning that back into Roman
+letters gives wrong spellings (रश became "rash" but was "rush"; गेम became "gem" but was "game").
+For every word, give the spelling a viewer expects:
+- English words in correct English: rush, game, boss, bro, police, car, money, clip, chat, crazy, what.
+- Hindi/Urdu words the way people type Hinglish on Instagram: kya, nahi, bhai, hai, yaar, matlab, kar, raha, abhi,
+  bas, accha, chal, dekh, mera, tera, kaun, kyun, pagal.
+- Names of people, places and games as they are normally written.
+Never translate, never add or drop a word, never merge or split words, never censor. Keep punctuation attached.
+Answer JSON only: {"w": ["word", ...]} with exactly one entry per input line, in order."""
+
+
+def fix_spellings(words: list[dict], log=print) -> list[dict]:
+    """Captions of Hindi/Hinglish speech, spelled the way viewers write: English words in English (rush, not
+    rash), Hindi words in everyday Hinglish. Words keep their timings; anything doubtful stays as it was."""
+    if not words or not ai.enabled() or not any(w.get("dv") for w in words):
+        return words
+    out = [dict(w) for w in words]
+    fixed = 0
+    for i in range(0, len(out), 140):
+        part = out[i:i + 140]
+        lines = "\n".join(f"{j}|{ai.safe(w['w'], 40)}|{ai.safe(w.get('dv', ''), 40)}" for j, w in enumerate(part))
+        try:
+            res = ai.ask_json(SYSTEM_SPELL, f"{len(part)} words:\n{lines}", max_tokens=2400, temperature=0.1)
+        except Exception as e:  # noqa: BLE001
+            log(f"Spelling fix skipped: {str(e)[:120]}")
+            return out
+        got = (res or {}).get("w") if isinstance(res, dict) else None
+        if not isinstance(got, list) or len(got) != len(part):
+            continue
+        for w, new in zip(part, got):
+            new = str(new or "").strip()
+            if (new and len(new) <= 40 and " " not in new and not transcribe.NON_LATIN.search(new)
+                    and new.lower() != w["w"].lower()):
+                w["w"] = new
+                fixed += 1
+    if fixed:
+        log(f"Fixed the spelling of {fixed} caption words")
+    return out

@@ -6,6 +6,7 @@ and rendered without captions.
 from __future__ import annotations
 
 import re
+import sys
 
 import threading
 from pathlib import Path
@@ -36,6 +37,7 @@ def _load(force_cpu: bool = False):
         if _model is None:
             from faster_whisper import WhisperModel
 
+            _gpu_libs()
             device = "cpu" if _on_cpu else config.WHISPER_DEVICE
             if device == "auto":
                 try:
@@ -48,7 +50,7 @@ def _load(force_cpu: bool = False):
             err = None
             for dev, compute in tries:
                 try:
-                    _model = WhisperModel(config.WHISPER_MODEL or "small", device=dev, compute_type=compute)
+                    _model = WhisperModel(model_name(dev), device=dev, compute_type=compute)
                     _on_cpu = dev == "cpu"
                     break
                 except Exception as e:  # noqa: BLE001
@@ -56,6 +58,36 @@ def _load(force_cpu: bool = False):
             if _model is None:
                 raise RuntimeError(f"Couldn't load the speech model: {err}")
         return _model
+
+
+def model_name(device: str) -> str:
+    """"auto": large-v3-turbo on a graphics card (much better at Hindi, Hinglish and accents, and quick there);
+    small on the processor, where the big one would take too long."""
+    m = (config.WHISPER_MODEL or "auto").strip()
+    if m == "auto":
+        return "large-v3-turbo" if device == "cuda" else "small"
+    return m
+
+
+def _gpu_libs() -> None:
+    """On Windows the CUDA libraries come as pip packages (nvidia-cublas-cu12, nvidia-cudnn-cu12): put their
+    folders where the speech engine looks for them."""
+    if sys.platform != "win32":
+        return
+    try:
+        import nvidia  # noqa: F401
+    except ImportError:
+        return
+    import os
+
+    for base in getattr(sys.modules["nvidia"], "__path__", []):
+        for b in Path(base).glob("*/bin"):
+            try:
+                os.add_dll_directory(str(b))
+            except (OSError, AttributeError):
+                pass
+            if str(b) not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = str(b) + os.pathsep + os.environ.get("PATH", "")
 
 
 def transcribe(path: Path, start: float = 0.0, duration: float | None = None, language: str = "",
@@ -142,7 +174,8 @@ def _hinglish(words: list[dict], log=print) -> list[dict]:
     out = []
     for w in words:
         try:
-            out.append({**w, "w": hinglish_word(w["w"])})
+            # keep the Devanagari too: the spelling fix needs it (रश is "rush", not "rash")
+            out.append({**w, "w": hinglish_word(w["w"]), "dv": w["w"]} if NON_LATIN.search(w["w"]) else w)
         except Exception:  # noqa: BLE001
             out.append(w)
     return out
