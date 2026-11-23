@@ -216,7 +216,9 @@ def hour_stats(account_id: str) -> dict[int, dict]:
     groups: dict[int, list[float]] = {}
     for r in rs:
         h = datetime.fromtimestamp(r["at"]).hour
-        w = max([x for x in WINDOWS if x <= h] or [WINDOWS[0]])
+        if not WINDOWS[0] <= h < WINDOWS[-1] + 2:
+            continue                       # posted overnight: not a window the autopilot would use
+        w = max(x for x in WINDOWS if x <= h)
         groups.setdefault(w, []).append(rel[r["post"]])
     for w, v in groups.items():
         out[w] = {"n": len(v), "lift": round(sum(v) / len(v), 2)}
