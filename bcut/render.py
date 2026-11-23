@@ -8,6 +8,7 @@ a mouth.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import tempfile
@@ -22,10 +23,23 @@ HIGHLIGHT_B = "&H00FFD23C"  # second speaker: #3CD2FF, a clear sky blue
 WHITE = "&H00FFFFFF"
 INK = "&H00000000"
 
-# per font: caption size, and average width of an upper-case letter as a share of the size (for fitting)
-FONT_METRICS = {"Anton": (104, 0.47), "Archivo Black": (78, 0.74), "Poppins ExtraBold": (80, 0.72)}
-MAX_LINE_W = 940          # px a caption line may take on the 1080 wide screen
+# per font: caption size (in ASS units: the font's whole height, so caps are ~half of it) and a fallback width ratio
+FONT_METRICS = {"Anton": (156, 0.47), "Archivo Black": (138, 0.74), "Poppins ExtraBold": (180, 0.72)}
+MAX_LINE_W = 900          # px a caption line may take on the 1080 wide screen
 SAFE_TOP, SAFE_BOTTOM = 250, 1480
+_ADV: dict | None = None
+
+
+def _advances(font: str) -> dict | None:
+    """Real glyph widths of the bundled fonts (measured once from the font files), so every word can be placed
+    exactly where libass would draw it."""
+    global _ADV
+    if _ADV is None:
+        try:
+            _ADV = json.loads((FONTS / "metrics.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _ADV = {}
+    return _ADV.get(font)
 
 
 def _ts(t: float) -> str:
@@ -41,7 +55,12 @@ def _metrics(font: str) -> tuple[int, float]:
     return FONT_METRICS.get(font, (88, 0.62))
 
 
-def _width(text: str, size: float, ratio: float) -> float:
+def _width(text: str, size: float, ratio: float, font: str | None = None) -> float:
+    m = _advances(font or config.CAPTION_FONT)
+    if m:
+        adv, win = m["adv"], m["win"]
+        miss = adv.get("N", win * 0.5)
+        return sum(adv.get(ch, miss) for ch in text) * size / win
     return sum(size * (0.32 if ch == " " else ratio * (0.55 if ch in "IJ1.,'!:;" else 1.0)) for ch in text)
 
 
@@ -140,7 +159,8 @@ def build_ass(words: list[dict], start: float, end: float, hook: str, credit: st
         spots, faces = reframe.text_spots(plan, src_w, src_h), (plan.get("faces_out") or []) + (plan.get("text_out") or [])
     font = config.CAPTION_FONT
     size, ratio = _metrics(font)
-    hook_size = int(size * 0.78)
+    hook_size = int(size * 0.7)
+    outline = max(6, round(size / 15))
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -150,8 +170,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{font},{size},{WHITE},{WHITE},{INK},&H00000000,0,0,0,0,100,100,1.5,0,1,{max(6, size // 13)},0,5,40,40,0,1
-Style: Hook,{font},{hook_size},{WHITE},{WHITE},{INK},&H00000000,0,0,0,0,100,100,1,0,1,{max(5, hook_size // 13)},0,5,60,60,0,1
+Style: Cap,{font},{size},{WHITE},{WHITE},{INK},&H8C000000,0,0,0,0,100,100,0,0,1,{outline},5,5,0,0,0,1
+Style: Hook,{font},{hook_size},{WHITE},{WHITE},{INK},&H8C000000,0,0,0,0,100,100,0,0,1,{max(5, round(hook_size / 15))},4,5,60,60,0,1
 Style: Credit,Poppins ExtraBold,32,&H22FFFFFF,&H22FFFFFF,&H88000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,9,40,40,70,1
 
 [Events]
@@ -159,31 +179,45 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     ev = []
     dur = end - start
-    half_h = size * 0.62
+    half_h = size * 0.3 + outline + 6          # caps are about 0.55 of the font size
     hook_box, hook_hold = [], 0.0
     lines = _wrap(" ".join(_clean(x) for x in (hook or "").split()), hook_size, ratio, 900)[:3]
     if lines:
         hold = hook_hold = min(3.0, max(1.8, dur * 0.2))
-        hh = hook_size * 0.62 * len(lines)
+        hh = (hook_size * 0.34 + 8) * len(lines)
         hw = max(_width(ln, hook_size, ratio) for ln in lines) / 2
         hy = _place(spots["hook"], 0, hold, hh, hw, faces, None)
         ev.append(f"Dialogue: 2,{_ts(0)},{_ts(hold)},Hook,,0,0,0,,"
-                  f"{{\\an5\\pos(540,{hy})\\fad(60,200)\\fscx85\\fscy85\\t(0,140,\\fscx100\\fscy100)}}"
+                  f"{{\\an5\\pos(540,{hy})\\blur0.6\\fad(0,160)\\alpha&HFF&\\fscx70\\fscy70"
+                  f"\\t(0,80,\\alpha&H00&)\\t(0,120,0.5,\\fscx106\\fscy106)\\t(120,220,1.5,\\fscx100\\fscy100)}}"
                   + "\\N".join(lines))
         # captions keep clear of the hook while it is up (treated like one more face)
         hook_box = [[t, int(540 - hw), int(hy - hh), int(540 + hw), int(hy + hh)] for t in (0.0, hold / 2, hold)]
     prev = None
     # the source already has its own subtitles: ours on top would read twice and look broken
     spoken = [] if plan.get("burned") else [w for w in words if start - 0.05 <= w["s"] < end]
-    for g in _groups(spoken, size, ratio):
-        g_end = min(g[-1]["e"] + 0.2, end)
-        g = [x for x in g if _clean(x["w"])]
-        if not g:
-            continue
-        line = " ".join(_line(g))
-        half_w = min(MAX_LINE_W, _width(line, size, ratio)) / 2
-        g0 = g[0]["s"] - start
-        y = _place(spots["cap"], g0, g_end - start, half_h, half_w,
+    groups = [[x for x in g if _clean(x["w"])] for g in _groups(spoken, size, ratio)]
+    groups = [g for g in groups if g]
+    for gi, g in enumerate(groups):
+        # a line leaves before the next one arrives: two lines are never on screen together
+        nxt = groups[gi + 1][0]["s"] if gi + 1 < len(groups) else end
+        g_end = min(g[-1]["e"] + 0.25, nxt - 0.02, end)
+        shown = _line(g)
+        # contractions were merged into one shown word: keep each shown word's first spoken timing
+        times, k = [], 0
+        for x in g:
+            if k < len(shown) and not (times and _clean(x["w"])[:1] in "'’"):
+                times.append(x["s"])
+                k += 1
+        times = times[:len(shown)]
+        while len(times) < len(shown):
+            times.append(times[-1] if times else g[0]["s"])
+        gap = _width(" ", size, ratio) + 0.05 * size
+        ws_px = [_width(w, size, ratio) for w in shown]
+        total = sum(ws_px) + gap * (len(shown) - 1)
+        fit = min(1.0, MAX_LINE_W / total) if total else 1.0     # one long word: shrink the line to fit
+        g0 = times[0] - start
+        y = _place(spots["cap"], g0, g_end - start, half_h * fit, total * fit / 2,
                    faces + (hook_box if g0 < hook_hold + 0.2 else []), prev)
         prev = y
         lit_c = HIGHLIGHT
@@ -191,23 +225,35 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if t0 <= g0 + 0.05 < t1:
                 lit_c = HIGHLIGHT_B if who == "b" else HIGHLIGHT
                 break
-        for i, w in enumerate(g):
-            s = w["s"] - start
-            e = (g[i + 1]["s"] if i + 1 < len(g) else g_end) - start
-            if e <= s:
+        # every word has its own spot, so a word can pop without nudging its neighbours
+        xs, cx = [], 540 - total * fit / 2
+        for wpx in ws_px:
+            xs.append(round(cx + wpx * fit / 2))
+            cx += (wpx + gap) * fit
+        sc = round(100 * fit)
+        for k in range(len(shown)):
+            s0 = times[k] - start
+            s1 = (times[k + 1] if k + 1 < len(shown) else g_end) - start
+            s1 = min(s1, g_end - start)
+            if s1 - s0 < 0.02:
                 continue
-            parts = []
-            for j, x in enumerate(g):
-                word = _clean(x["w"])
-                lit = f"{{\\c{lit_c}}}{word}{{\\c{WHITE}}}" if j == i else word
-                if parts and word[:1] in "'’":
-                    parts[-1] += lit
+            last = k == len(shown) - 1
+            # fade out only into a pause; straight into the next line it's a clean cut
+            out_fade = "\\fad(0,90)" if last and nxt - g_end > 0.25 else ""
+            for j in range(k + 1):
+                pos = f"\\an5\\pos({xs[j]},{y})\\blur0.6{out_fade}"
+                if j == k:
+                    # the word being said arrives: rises a little, overshoots, settles bigger and lit
+                    tag = (f"{pos}\\c{lit_c}\\alpha&HFF&\\fscx{round(sc * .62)}\\fscy{round(sc * .62)}"
+                           f"\\t(0,60,\\alpha&H00&)\\t(0,100,0.5,\\fscx{round(sc * 1.16)}\\fscy{round(sc * 1.16)})"
+                           f"\\t(100,190,1.6,\\fscx{round(sc * 1.08)}\\fscy{round(sc * 1.08)})")
+                elif j == k - 1:
+                    # the word before hands over: back to white and its normal size
+                    tag = (f"{pos}\\c{lit_c}\\fscx{round(sc * 1.08)}\\fscy{round(sc * 1.08)}"
+                           f"\\t(0,120,0.6,\\c{WHITE}\\fscx{sc}\\fscy{sc})")
                 else:
-                    parts.append(lit)
-            # a new line pops in once (small overshoot, 0.18 s); after that only the lit word changes
-            pop = ("\\fad(40,0)\\fscx78\\fscy78\\t(0,110,\\fscx105\\fscy105)\\t(110,180,\\fscx100\\fscy100)"
-                   if i == 0 else "")
-            ev.append(f"Dialogue: 1,{_ts(s)},{_ts(e)},Cap,,0,0,0,,{{\\an5\\pos(540,{y}){pop}}}" + " ".join(parts))
+                    tag = f"{pos}\\fscx{sc}\\fscy{sc}"
+                ev.append(f"Dialogue: 1,{_ts(s0)},{_ts(s1)},Cap,,0,0,0,,{{{tag}}}{shown[j]}")
     if credit:
         ev.append(f"Dialogue: 0,{_ts(0)},{_ts(dur)},Credit,,0,0,0,,{_esc(credit)}")
     return head + "\n".join(ev) + "\n"

@@ -1,5 +1,6 @@
 """Run with:  python -m pytest -q
 Needs ffmpeg. No keys, no internet: everything runs on generated audio/video in a throwaway data folder."""
+import re
 import os
 import subprocess
 import sys
@@ -685,3 +686,28 @@ def test_trim_editor_renders_a_new_cut(tmp_path):
     assert out["guard"]["edit"]["hook"] == "New hook" and out["guard"]["layout_choice"] == "center"
     with pytest.raises(RuntimeError):
         pipeline.rerender(clip["id"], start=10.0, end=11.0)
+
+
+def test_caption_lines_never_overlap_and_words_pop_in_place():
+    from bcut import render
+    ws, t = [], 0.0
+    for i, w in enumerate("so i was walking down the street and this guy just runs at me with a giant fish okay".split()):
+        ws.append({"w": w, "s": round(t, 2), "e": round(t + 0.22, 2)})
+        t += 0.24 if i % 4 else 0.3          # tight speech: groups follow each other within 0.1 s
+    ass = render.build_ass(ws, 0, t + 1, "", "", {"faces_out": [], "mode": "center"})
+    evs = []
+    for ln in ass.splitlines():
+        if ln.startswith("Dialogue: 1,"):
+            f = ln.split(",", 9)
+            sec = lambda s: int(s[0]) * 3600 + int(s[2:4]) * 60 + float(s[5:])  # noqa: E731
+            pos = re.search(r"\\pos\((\d+),(\d+)\)", f[9]).groups()
+            evs.append((sec(f[1]), sec(f[2]), int(pos[1]), int(pos[0]), f[9].rsplit("}", 1)[1]))
+    assert evs
+    x = 0.0
+    while x < t:
+        on = [e for e in evs if e[0] <= x < e[1]]
+        assert len({e[3] for e in on}) == len(on), (x, on)          # one word per spot
+        assert len({e[2] for e in on}) <= 1, (x, on)                # one line at a time
+        assert len(on) <= 3
+        x += 0.01
+    assert "\\N" not in "".join(e[4] for e in evs)

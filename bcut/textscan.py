@@ -115,7 +115,13 @@ def scan(imgs: list[np.ndarray], times: list[float]) -> dict:
     cy = np.array([float(np.mean(r[2])) for r in rows.values()])
     # subtitles stay centred and at one height while the words (so the widths) keep changing; printing on a
     # T-shirt or a sign moves with the picture and keeps its width
-    centred = float(np.mean(np.abs(cx - 0.5) < 0.07)) >= 0.5 and float(np.median(np.abs(cy - np.median(cy)))) < 0.03
+    x0s = np.array([r[0] for r in rows.values()])
+    x1s = np.array([r[1] for r in rows.values()])
+    # word-by-word captions grow from a fixed spot, so a half-said line sits off centre: then the span the
+    # lines fill over time is what's centred
+    spread = abs((np.percentile(x0s, 10) + np.percentile(x1s, 90)) / 2 - 0.5) < 0.06
+    centred = ((float(np.mean(np.abs(cx - 0.5) < 0.07)) >= 0.5 or spread) and
+               float(np.median(np.abs(cy - np.median(cy)))) < 0.03)
     changing = widths.std() / max(widths.mean(), 1e-3) > 0.14
     result["why"] = {"share": round(share, 2), "centred": round(float(np.mean(np.abs(cx - 0.5) < 0.07)), 2),
                      "cv": round(float(widths.std() / max(widths.mean(), 1e-3)), 2), "band": k / 20}
