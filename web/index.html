@@ -782,20 +782,21 @@ async function viewSettings() {
 }
 
 /* ---------------- Campaigns ---------------- */
-const money = v => `$${(+v || 0).toLocaleString([], {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+const money = (v, cur = "$") => `${cur}${(+v || 0).toLocaleString([], {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
 const CPLAT = ["instagram", "youtube", "tiktok", "facebook"];
 function campaignForm(c = {}, streamers = []) {
   const r = c.rules || {}, cpm = r.cpm || {}, mine = c.streamers || [];
   const ends = c.ends ? new Date(c.ends * 1000).toISOString().slice(0, 10) : "";
   return `<form class="panel" id="kform"><div class="fgrid">
     <div class="wide"><label class="f" for="k-brief">The campaign's brief</label><textarea class="field" id="k-brief" name="brief" rows="5" placeholder="Paste the whole brief from Content Rewards, Vyro, Clipster or the Discord post">${esc(c.brief)}</textarea>
-      <div class="acts" style="margin-top:8px"><button type="button" class="btn" id="k-read">Read the brief</button><span class="hint" style="margin:0">The AI fills in the rules below. Check them before saving.</span></div></div>
+      <div class="acts" style="margin-top:8px"><button type="button" class="btn" id="k-read">Read the brief</button><span class="hint" style="margin:0">Fills in the rules below, with or without the AI. Check them before saving.</span></div></div>
     <div><label class="f" for="k-name">Name</label><input class="field" id="k-name" name="name" value="${esc(c.name)}" required placeholder="Kai Cenat Kick clips"></div>
     <div><label class="f" for="k-site">Where it runs</label><input class="field" id="k-site" name="site" value="${esc(c.site)}" placeholder="Content Rewards, Vyro, Discord…"></div>
     <div class="wide"><label class="f" for="k-url">Campaign page</label><input class="field" id="k-url" name="url" value="${esc(c.url)}" placeholder="https://… where you submit your links"></div>
-    <div class="wide"><label class="f">Pay per 1,000 views (US$)</label><div class="cpm">${CPLAT.map(p => `<label>${PLAT[p]}<input class="field" name="cpm_${p}" inputmode="decimal" value="${cpm[p] ?? ""}" placeholder="0"></label>`).join("")}</div><p class="hint">Leave a platform empty if the campaign doesn't pay there.</p></div>
+    <div><label class="f" for="k-cur">Currency</label><select class="field" id="k-cur" name="currency">${[["$","US dollars ($)"],["₹","Rupees (₹)"],["€","Euros (€)"],["£","Pounds (£)"]].map(([k,l]) => `<option value="${k}" ${(r.currency || "$") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div><div></div>
+    <div class="wide"><label class="f">Pay per 1,000 views</label><div class="cpm">${CPLAT.map(p => `<label>${PLAT[p]}<input class="field" name="cpm_${p}" inputmode="decimal" value="${cpm[p] ?? ""}" placeholder="0"></label>`).join("")}</div><p class="hint">Leave a platform empty if the campaign doesn't pay there.</p></div>
     <div><label class="f" for="k-min">Minimum views per clip</label><input class="field" id="k-min" name="min_views" inputmode="numeric" value="${r.min_views || ""}" placeholder="0"></div>
-    <div><label class="f" for="k-cap">Most a clip can earn (US$)</label><input class="field" id="k-cap" name="max_per_clip" inputmode="decimal" value="${r.max_per_clip || ""}" placeholder="No cap"></div>
+    <div><label class="f" for="k-cap">Most a clip can earn</label><input class="field" id="k-cap" name="max_per_clip" inputmode="decimal" value="${r.max_per_clip || ""}" placeholder="No cap"></div>
     <div><label class="f" for="k-l0">Shortest clip (seconds)</label><input class="field" id="k-l0" name="min_len" inputmode="numeric" value="${r.min_len || ""}" placeholder="Your usual"></div>
     <div><label class="f" for="k-l1">Longest clip (seconds)</label><input class="field" id="k-l1" name="max_len" inputmode="numeric" value="${r.max_len || ""}" placeholder="Your usual"></div>
     <div><label class="f" for="k-tags">Hashtags every caption needs</label><input class="field" id="k-tags" name="tags" value="${esc(r.tags)}" placeholder="#ad #brandname"></div>
@@ -812,15 +813,16 @@ async function viewCampaigns() {
   const [list, streamers] = await Promise.all([api("/api/campaigns"), api("/api/streamers"), loadState()]);
   const edit = S.sel && S.sel !== "new" ? list.find(c => c.id === S.sel) : null;
   const tot = list.reduce((a, c) => ({earned: a.earned + c.stats.earned, views: a.views + c.stats.views, posted: a.posted + c.stats.posted}), {earned: 0, views: 0, posted: 0});
-  const card = c => { const st = c.stats, r = c.rules;
-    const rates = Object.entries(r.cpm || {}).filter(([, v]) => v > 0).map(([p, v]) => `${PLAT[p]} ${money(v)}`).join(" · ") || "No rates set";
+  const curs = [...new Set(list.map(c => c.rules.currency || "$"))], totCur = curs.length === 1 ? curs[0] : "";
+  const card = c => { const st = c.stats, r = c.rules, cur = r.currency || "$", money_ = v => money(v, cur);
+    const rates = Object.entries(r.cpm || {}).filter(([, v]) => v > 0).map(([p, v]) => `${PLAT[p]} ${money_(v)}`).join(" · ") || "No rates set";
     const links = st.posts.filter(p => p.url).map(p => p.url);
-    return `<section class="card camp"><header><div><h2>${esc(c.name)}</h2><p class="sub" style="margin:2px 0 0">${esc(c.site || "")}${c.site ? " · " : ""}${rates} per 1,000 views${r.min_views ? ` · ${(+r.min_views).toLocaleString()} views minimum` : ""}${r.max_per_clip ? ` · up to ${money(r.max_per_clip)} a clip` : ""}</p></div>
+    return `<section class="card camp"><header><div><h2>${esc(c.name)}</h2><p class="sub" style="margin:2px 0 0">${esc(c.site || "")}${c.site ? " · " : ""}${rates} per 1,000 views${r.min_views ? ` · ${(+r.min_views).toLocaleString()} views minimum` : ""}${r.max_per_clip ? ` · up to ${money_(r.max_per_clip)} a clip` : ""}</p></div>
       <div class="acts"><span class="pill ${c.status === "active" ? "ok" : ""}">${{active: "Active", paused: "Paused", ended: "Ended"}[c.status] || c.status}</span><a class="btn ghost sm" href="#campaigns/${c.id}">Edit</a></div></header>
-      <div class="kpis small"><div class="kpi"><span>Clips made</span><b>${st.clips}</b></div><div class="kpi"><span>Posted</span><b>${st.posted}</b></div><div class="kpi"><span>Views</span><b>${st.views.toLocaleString()}</b></div><div class="kpi"><span>Should earn</span><b>${money(st.earned)}</b><small>estimate</small></div></div>
-      ${st.posts.length ? `<table style="margin-top:12px"><thead><tr><th>Clip</th><th>Where</th><th class="n">Views</th><th class="n">Earns</th><th></th></tr></thead><tbody>${st.posts.slice(0, 12).map(p => `<tr><td><a href="#inbox/${p.clip}">${esc(p.title || "Clip")}</a></td><td>${PLAT[p.platform] || esc(p.platform)}</td><td class="n num">${p.views.toLocaleString()}</td><td class="n num">${p.counts ? money(p.earn) : `<span class="faint" title="Under the minimum views, or a platform this campaign doesn't pay on">—</span>`}</td><td class="n">${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="muted" style="margin:12px 0 0">No posts yet. Clips made for this campaign show here with their views once they're posted.</p>`}
+      <div class="kpis small"><div class="kpi"><span>Clips made</span><b>${st.clips}</b></div><div class="kpi"><span>Posted</span><b>${st.posted}</b></div><div class="kpi"><span>Views</span><b>${st.views.toLocaleString()}</b></div><div class="kpi"><span>Should earn</span><b>${money_(st.earned)}</b><small>estimate</small></div></div>
+      ${st.posts.length ? `<table style="margin-top:12px"><thead><tr><th>Clip</th><th>Where</th><th class="n">Views</th><th class="n">Earns</th><th></th></tr></thead><tbody>${st.posts.slice(0, 12).map(p => `<tr><td><a href="#inbox/${p.clip}">${esc(p.title || "Clip")}</a></td><td>${PLAT[p.platform] || esc(p.platform)}</td><td class="n num">${p.views.toLocaleString()}</td><td class="n num">${p.counts ? money_(p.earn) : `<span class="faint" title="Under the minimum views, or a platform this campaign doesn't pay on">—</span>`}</td><td class="n">${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">Open</a>` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="muted" style="margin:12px 0 0">No posts yet. Clips made for this campaign show here with their views once they're posted.</p>`}
       <div class="acts" style="margin-top:12px">${links.length ? `<button class="btn sm" data-copy="${esc(links.join("\n"))}">Copy ${links.length} link${links.length === 1 ? "" : "s"} to submit</button>` : ""}${c.url ? `<a class="btn ghost sm" href="${esc(c.url)}" target="_blank" rel="noopener">Open campaign page</a>` : ""}</div></section>`; };
-  main.innerHTML = `<div class="titlerow"><div><h1>Campaigns</h1><p class="sub">${list.length ? `${list.filter(c => c.status === "active").length} active · ${tot.posted} posts · ${tot.views.toLocaleString()} views · about ${money(tot.earned)} earned` : "Paid clipping campaigns you've joined. Their clips follow the brief, and your views turn into an earnings estimate."}</p></div>
+  main.innerHTML = `<div class="titlerow"><div><h1>Campaigns</h1><p class="sub">${list.length ? `${list.filter(c => c.status === "active").length} active · ${tot.posted} posts · ${tot.views.toLocaleString()} views${totCur ? ` · about ${money(tot.earned, totCur)} earned` : ""}` : "Paid clipping campaigns you've joined. Their clips follow the brief, and your views turn into an earnings estimate."}</p></div>
     ${S.sel ? "" : `<button class="btn primary" id="kadd">Add campaign</button>`}</div>
   <div id="kslot">${S.sel ? `<h2 class="railh">${edit ? "Edit " + esc(edit.name) : "New campaign"}</h2>${campaignForm(edit || {}, streamers)}` : ""}</div>
   ${list.length ? list.map(card).join("") : S.sel ? "" : `<section class="card"><div class="empty"><b>No campaigns yet</b>Join one on Content Rewards, Vyro or Clipster, or in a streamer's Discord, then add it here: paste its brief and the rules fill in by themselves. Views are read from your accounts every 6 hours.</div></section>`}`;
@@ -831,20 +833,22 @@ async function viewCampaigns() {
   if ($("#k-del")) $("#k-del").onclick = e => act(e.currentTarget, async () => { await api(`/api/campaigns/${edit.id}`, {method: "DELETE"}); location.hash = "#campaigns"; loadCampaignPicker(); }, "Removed");
   $("#k-read").onclick = e => act(e.currentTarget, async () => {
     const g = await api("/api/campaigns/read-brief", {method: "POST", body: {brief: $("#k-brief").value}});
+    if (g.rules.currency) f.elements.currency.value = g.rules.currency;
     const set = (n, v) => { const el = f.elements[n]; if (el && v !== undefined && v !== null && v !== "" && v !== 0) el.value = v; };
     set("name", g.name); set("site", g.site);
     CPLAT.forEach(p => set("cpm_" + p, (g.rules.cpm || {})[p]));
     ["min_views", "max_per_clip", "min_len", "max_len", "tags", "mention", "credit", "notes"].forEach(k => set(k, g.rules[k]));
     set("banned", (g.rules.banned || []).join(", "));
     f.querySelectorAll("[name=streamers]").forEach(x => { if ((g.streamers || []).includes(x.value)) x.checked = true; });
-  }, "Rules filled in. Check them, then save.");
+    toast(g.how === "ai" ? "Rules filled in. Check them, then save." : "Rules filled in from the brief's own words. Check the numbers, then save.");
+  });
   f.onsubmit = e => { e.preventDefault(); const fd = new FormData(f);
     const num = k => fd.get(k) === "" ? 0 : +fd.get(k);
     const cpm = {}; CPLAT.forEach(p => { if (fd.get("cpm_" + p) !== "") cpm[p] = +fd.get("cpm_" + p); });
     const body = {name: fd.get("name"), site: fd.get("site"), url: fd.get("url"), brief: fd.get("brief"), status: fd.get("status"),
       ends: fd.get("ends") ? new Date(fd.get("ends") + "T23:59:59").getTime() / 1000 : 0, streamers: fd.getAll("streamers"),
       rules: {cpm, min_views: num("min_views"), max_per_clip: num("max_per_clip"), min_len: num("min_len"), max_len: num("max_len"),
-        tags: fd.get("tags"), mention: fd.get("mention"), credit: fd.get("credit"), banned: fd.get("banned"), notes: fd.get("notes")}};
+        tags: fd.get("tags"), mention: fd.get("mention"), credit: fd.get("credit"), banned: fd.get("banned"), notes: fd.get("notes"), currency: fd.get("currency")}};
     act(f.querySelector(".btn.primary"), async () => { await api(edit ? `/api/campaigns/${edit.id}` : "/api/campaigns", {method: edit ? "PATCH" : "POST", body}); location.hash = "#campaigns"; loadCampaignPicker(); }, edit ? "Saved" : "Campaign added");
   };
 }

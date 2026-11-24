@@ -371,9 +371,11 @@ autopilot posts in the time windows that got it the most views (and now and then
 Sites like Content Rewards, Vyro and Clipster (and many streamers' Discord servers) pay per 1,000 views for clips
 of a creator. Join one there, then in the app open **Campaigns → Add campaign**:
 
-1. Paste the campaign's brief and press **Read the brief**. The AI fills in the pay per platform, the minimum views,
-   the most a clip can earn, the clip length, the hashtags and @accounts every caption needs, and what's not
-   allowed. Check them and fix anything it missed.
+1. Paste the campaign's brief and press **Read the brief**. It fills in the name, the pay per platform and its
+   currency ($, ₹, € or £), the minimum views, the most a clip can earn, the clip length, the hashtags and
+   @accounts every caption needs, and what's not allowed. With the AI set up (section 3) it reads the brief like a
+   person would; without it, it picks out the numbers and tags the brief states. Either way, check them and fix
+   anything it missed.
 2. Tick **Whose clips count**: those streamers' lives and uploads are clipped for the campaign. For any other
    video, pick the campaign next to the link box when you paste it.
 3. **Add campaign.**

@@ -999,3 +999,26 @@ def test_make_clips_options(client, monkeypatch):
     sig = {"excite": np.ones(100), "db": np.full(100, -30.0)}
     only = pipeline._only(sig, 10, 20)
     assert only["excite"][:20].sum() == 0 and only["excite"][20:41].all() and only["db"][0] == -30
+
+
+def test_campaign_briefs_are_read_without_the_ai(client):
+    from bcut import campaigns
+    brief = ("Speed Clips (Content Rewards)\nTikTok: $1 CPM\nYouTube Shorts: $0.50 per 1k views\n"
+             "Instagram: $0.80/1k views\nMust hit 5k views min. Clips 15-60 seconds. Credit @IShowSpeed and use "
+             "#speed #clips. Don't use copyrighted music. No slurs, no NSFW.\nPayout capped at $150 per video.")
+    g = campaigns.read_brief_locally(brief)
+    r = g["rules"]
+    assert g["name"] == "Speed Clips (Content Rewards)" and g["site"] == "Content Rewards"
+    assert r["cpm"] == {"tiktok": 1.0, "youtube": 0.5, "instagram": 0.8} and r["currency"] == "$"
+    assert (r["min_views"], r["max_per_clip"], r["min_len"], r["max_len"]) == (5000, 150, 15, 60)
+    assert r["tags"] == "#speed #clips" and r["mention"] == "@IShowSpeed"
+    assert {"copyrighted music", "slurs", "nsfw"} <= set(r["banned"])
+    assert "Speed" in g["creators"]
+    inr = campaigns.read_brief_locally("Fanum clipping — ₹100 per 1M views on Reels. Minimum 50k views. 20 sec to 1 min.")
+    assert inr["name"] == "Fanum clipping" and inr["rules"]["currency"] == "₹"
+    assert inr["rules"]["cpm"] == {"instagram": 0.1} and (inr["rules"]["min_len"], inr["rules"]["max_len"]) == (20, 60)
+    got = client.post("/api/campaigns/read-brief", json={"brief": brief}).json()     # no AI set up in the tests
+    assert got["how"] == "local" and got["rules"]["cpm"]["tiktok"] == 1.0
+    k = client.post("/api/campaigns", json={"name": "Fanum", "rules": {**inr["rules"]}}).json()
+    assert k["rules"]["currency"] == "₹"
+    client.delete(f"/api/campaigns/{k['id']}")
