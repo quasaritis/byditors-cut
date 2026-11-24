@@ -128,7 +128,8 @@ def conn() -> sqlite3.Connection:
 
 # columns added after release: (table, column, definition)
 COLUMNS = [
-    ("streamers", "captions", "TEXT NOT NULL DEFAULT 'auto'"),        # auto | hinglish | english
+    ("streamers", "captions", "TEXT NOT NULL DEFAULT 'auto'"),        # auto | hinglish | english | ... (brain.LANGS)
+    ("streamers", "style_id", "TEXT NOT NULL DEFAULT ''"),           # how their clips look (bcut.styles)
 ]
 
 

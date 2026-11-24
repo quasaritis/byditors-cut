@@ -54,6 +54,7 @@ The tests need ffmpeg but no keys or internet. They take about a minute.
 | `bcut/radar.py`, `bcut/live.py` | Watching streamers; recording and clipping lives |
 | `bcut/brain.py`, `bcut/ai.py` | Clip picking and captions; the only code that calls an AI service |
 | `bcut/reframe.py`, `bcut/render.py` | 9:16 layouts (split, face, speaker, stack, wide, center, fit) and the ffmpeg render; captions avoid faces |
+| `bcut/styles.py`, `bcut/fonts/` | Saved styles (captions, heading, layout) and the caption fonts; after adding a font run `python scripts/font_metrics.py` |
 | `bcut/fx.py`, `bcut/sfx/` | Edit passes: dead air, cold open, punch-ins, sound hits (CC0), loop; `pipeline.produce` runs them |
 | `bcut/learn.py` | Reads post stats back, ranks the autopilot, A/B tests hook styles, learns posting times |
 | `bcut/campaigns.py` | Paid clipping campaigns: rules from the brief, caption tags, Guard check, earnings |

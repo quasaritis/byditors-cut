@@ -49,8 +49,12 @@ If you close the browser tab, open http://127.0.0.1:8777 again. The app keeps ru
    - **It's my video**: your own content. Its clips can post automatically.
    - **I have permission**: the creator said yes, or you're in their clip program. Its clips can post automatically.
    - **Clip only**: anything else. Clips are made, but they wait for you and never post by themselves.
-3. Press **Make clips**. A 20-minute video takes roughly 5–15 minutes, depending on your PC.
-4. Finished clips appear on **Today** and in the **Clip inbox**. Each one has a verdict from the Guard:
+3. Optional: the **sliders button** next to **Make clips** opens the clip options. Pick a **Streamer** (their
+   rights and credit apply), a **Style** (how the clips look, see below), the **Caption language**, how many
+   **Clips**, the **Shortest** and **Longest** clip in seconds, and the **Part of the video** to clip from (start
+   and end in minutes, empty for all of it). They're remembered for the next link; **Back to the usual** resets them.
+4. Press **Make clips**. A 20-minute video takes roughly 5–15 minutes, depending on your PC.
+5. Finished clips appear on **Today** and in the **Clip inbox**. Each one has a verdict from the Guard:
    - **Ready to post**: passed every check.
    - **Needs a look**: something is unclear (no permission on record, music, a risky word). It waits for you.
    - **Blocked**: a clear problem (a copyrighted song, gambling promo, personal info). It only goes out if you write
@@ -75,14 +79,43 @@ Clips are saved in the app's `data\clips` folder as 1080 × 1920 MP4 files.
 
 Turn any of these off in **Guard & settings → Editing**.
 
-**Caption language.** Next to the link box, pick **Hinglish / as spoken** or **English captions**. English
-translates the captions, the hook and the title. For a streamer, set it once in their settings (**Captions**).
+**Caption language.** In the clip options, pick **As spoken** (Hindi becomes Hinglish in Roman letters) or a
+language to translate into: English, Hindi, Urdu, Spanish, Portuguese, French, German, Italian, Indonesian or
+Turkish. It translates the captions, the hook and the title, and needs the AI (section 3). For a streamer, set it
+once in their settings (**Captions**).
+
+### Styles: how your clips look
+
+Open **Styles** in the menu. Every clip uses your **default style** unless a streamer (their settings → **Style**)
+or a single link (clip options → **Style**) picks another. Start from a template (Default, Hype, Clean, Box,
+Bounce, Comic): open it, change what you like and press **Save as my style**. The preview on the left uses a frame
+of your newest clip; **Preview video** renders 7 seconds of it in the style for real.
+
+- **Captions**: a preset, then fine-tune the animation (pop, bounce, slide up, none), the font, the colours (text,
+  the word being said, key words such as numbers and hype words, the box behind the words), size, outline, shadow,
+  how many words show at a time and capital letters. Drag the captions in the preview to move them; they still
+  step aside when a face is there. **Automatic** puts them back.
+- **Heading**: the hook on top. Its look (outline, white box, dark box, orange box, comic, banner, plain), font,
+  size, and whether it stays for the whole clip or only the first seconds. Drag it to move it.
+- **Layout**:
+  - **Video**: *Smart* follows faces and picks the layout per clip, *Full + blur* shows the whole picture on a
+    blurred fill, *Zoomed in* shows a bigger middle, *Fill the screen* crops to fill it.
+  - **Streamer cam**: *Top half* or *Bottom half* (cam and gameplay one above the other), *Corner* (the gameplay
+    fills the screen and the cam sits in a box with rounded corners and a border; drag it in the preview to place
+    it), or *No cam*.
+  - **Where's the cam in the stream?**: *AI picks it* finds each streamer's cam by itself; *Draw it* lets you draw a
+    box around the cam on a frame of your video, for streamers who keep their cam in one place.
+  - **Part of the video**: *Pick a part* and draw the box the clip should show (a zoomed-in stream, or when only one
+    part of the screen matters).
+
+To change one clip, open it in the **Clip inbox**, pick another **Style** under **Edit this clip** and press
+**Render again**. Hindi and Urdu captions automatically use a font made for their script.
 
 ### Fixing a clip by hand
 
 Open a clip in the **Clip inbox**. Under the video, **Edit this clip** shows the original with 15 seconds either
 side. Drag **Start** and **End** (or play it and press **Set to player**), press **Play the selection** to check,
-change the hook or the layout if you like, then **Render again**. It takes about a minute.
+change the hook, the layout or the style if you like, then **Render again**. It takes about a minute.
 
 ---
 
@@ -282,7 +315,8 @@ Until TikTok reviews your app, posts are visible only to you. Submit it for revi
    - **Permission** / **Clip program**: you're allowed to post their clips. Put the proof (a link to their
      clip-program rules, or your email thread) in **Proof of permission**.
    - **No permission**: clips are made and wait in the Clip inbox. They never post by themselves.
-4. **Credit line**: how they're credited on every clip and caption, for example `@name on Kick`.
+4. **Credit line**: how they're credited on every clip and caption, for example `@name on Kick`. **Style**: how
+   their clips look (see *Styles* in section 2); empty means your default style.
 5. **Vertical layout**: *Decide per clip* is right for most people. It looks at every clip and picks one of these:
    - **Facecam on top, gameplay below**: gaming streams. The webcam box is found wherever it sits on screen; two
      webcams go side by side on top.
@@ -400,6 +434,9 @@ Lives that happened while it was off can't be recorded, but their uploads (VODs)
 ---
 
 ## 13. Fixing problems
+
+Something broken, or a feature you want? **Feedback & ideas** at the bottom of the menu opens a new issue on
+the project's GitHub page. Say what you did and what happened.
 
 | What you see | What it means and what to do |
 |---|---|

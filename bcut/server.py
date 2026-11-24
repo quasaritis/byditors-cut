@@ -5,6 +5,7 @@ websites, so a page you visit can't drive it.
 """
 from __future__ import annotations
 
+import json
 import secrets
 import shutil
 import os
@@ -14,10 +15,10 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
-from . import ai, campaigns, config, db, fx, guard, live, media, pipeline, publish, radar, reframe, telegram, tools, transcribe, winsys
+from . import ai, brain, campaigns, config, db, fx, guard, live, media, pipeline, publish, radar, reframe, styles, telegram, tools, transcribe, winsys
 from .guard import music, rules
 from .publish import platforms
 
@@ -162,8 +163,10 @@ def new_job(b: dict = Depends(_body)):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "Paste a full link that starts with https://")
     sid = b.get("streamer_id") or None
+    if sid and not db.get("streamers", str(sid)):
+        sid = None
     rights = b.get("rights") if b.get("rights") in ("own", "permission", "unknown") else "unknown"
-    caps = b.get("captions") if b.get("captions") in ("auto", "hinglish", "english") else "auto"
+    caps = b.get("captions") if b.get("captions") in brain.LANGS else "auto"
     camp = b.get("campaign_id") if b.get("campaign_id") and db.get("campaigns", str(b["campaign_id"])) else ""
     if camp and rights == "unknown":
         rights = "permission"           # joining a paid clipping campaign is the creator's permission
@@ -174,11 +177,45 @@ def new_job(b: dict = Depends(_body)):
                 sid = s["id"]
                 break
     return pipeline.create_job("video", url=url, streamer_id=sid,
-                               meta={"rights": rights, "captions": caps, "campaign_id": camp})
+                               meta={"rights": rights, "captions": caps, "campaign_id": camp,
+                                     "style_id": _style_id(b.get("style_id")), "options": _clip_options(b)})
+
+
+def _style_id(v) -> str:
+    v = str(v or "")
+    return v if v and v in {x["id"] for x in styles.all_styles()} else ""
+
+
+def _clip_options(b: dict) -> dict:
+    """The "Make clips" options: how many clips, shortest and longest (seconds), and which part of the
+    video (from/to in seconds). Missing or nonsense values fall back to the usual ones."""
+    def num(k, lo, hi):
+        try:
+            v = float(b.get(k))
+        except (TypeError, ValueError):
+            return None
+        return None if v != v else min(hi, max(lo, v))
+    out = {}
+    c = num("count", 1, 30)
+    if c:
+        out["count"] = int(c)
+    a, z = num("min_len", 5, 170), num("max_len", 8, 180)
+    if a:
+        out["min_len"] = int(a)
+    if z:
+        out["max_len"] = int(z)
+    if a and z and a > z:
+        out["min_len"], out["max_len"] = int(z), int(a)
+    f, t = num("from", 0, 86400), num("to", 0, 86400)
+    if f:
+        out["from"] = f
+    if t and t > (f or 0) + 10:
+        out["to"] = t
+    return out
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)):
+async def upload(file: UploadFile = File(...), options: str = Form("")):
     name = Path(file.filename or "video.mp4").name
     if Path(name).suffix.lower() not in (".mp4", ".mov", ".mkv", ".webm", ".m4v", ".ts", ".avi"):
         raise HTTPException(400, "That isn't a video file this app can read")
@@ -186,7 +223,15 @@ async def upload(file: UploadFile = File(...)):
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("wb") as f:
         shutil.copyfileobj(file.file, f, length=4 * 2**20)
-    return pipeline.create_job("video", file=str(dest), title=name)
+    try:
+        b = json.loads(options) if options else {}
+    except ValueError:
+        b = {}
+    b = b if isinstance(b, dict) else {}
+    sid = b.get("streamer_id") if b.get("streamer_id") and db.get("streamers", str(b["streamer_id"])) else None
+    return pipeline.create_job("video", file=str(dest), title=name, streamer_id=sid,
+                               meta={"captions": b.get("captions") if b.get("captions") in brain.LANGS else "auto",
+                                     "style_id": _style_id(b.get("style_id")), "options": _clip_options(b)})
 
 
 @app.get("/api/jobs")
@@ -302,7 +347,8 @@ def clip_edit(cid: str, b: dict = Depends(_body)):
     num = lambda k: float(b[k]) if b.get(k) not in (None, "") else None  # noqa: E731
     try:
         return _clip_public(pipeline.rerender(cid, layout=b.get("layout") or None, start=num("start"), end=num("end"),
-                                              hook=b.get("hook"), title=b.get("title")))
+                                              hook=b.get("hook"), title=b.get("title"),
+                                              style_id=_style_id(b.get("style_id")) or None))
     except (RuntimeError, ValueError) as e:
         raise HTTPException(400, str(e)) from e
 
@@ -437,6 +483,150 @@ def save_edit_style(b: dict = Depends(_body)):
     return {"style": fx.set_style(b), "labels": fx.LABELS}
 
 
+# ---------------------------------------------------------------- styles (how clips look)
+
+def _font_info() -> dict:
+    """Per caption font: its file (for the dashboard's live preview), its size at 100% and how big its em is
+    next to the full height libass sizes by."""
+    from . import render
+
+    out = {}
+    for name in styles.FONTS:
+        m = render._advances(name) or {}
+        if m.get("file"):
+            out[name] = {"file": m["file"], "base": render._metrics(name)[0],
+                         "em": round(m.get("upm", 1000) / max(1, m.get("win", 1000)), 4),
+                         "cap": round((m.get("cap") or 0) / max(1, m.get("win", 1000)), 4)}
+    return out
+
+
+@app.get("/api/styles")
+def list_styles():
+    return {"styles": styles.all_styles(), "default": styles.default_id_(), "options": styles.options(),
+            "languages": brain.LANGS, "fonts": _font_info()}
+
+
+@app.get("/fonts/{name}")
+def font_file(name: str):
+    f = config.ROOT / "bcut" / "fonts" / Path(name).name
+    if f.suffix.lower() != ".ttf" or not f.exists():
+        raise HTTPException(404, "Not found")
+    return FileResponse(f, media_type="font/ttf", headers={"Cache-Control": "max-age=86400"})
+
+
+@app.post("/api/styles")
+def add_style(b: dict = Depends(_body)):
+    return styles.save(b)
+
+
+@app.patch("/api/styles/{sid}")
+def edit_style_saved(sid: str, b: dict = Depends(_body)):
+    if sid.startswith("t_"):
+        raise HTTPException(400, "Templates can't be changed. Make a copy first.")
+    try:
+        return styles.save(b, sid)
+    except KeyError as e:
+        raise HTTPException(404, "Style not found") from e
+
+
+@app.post("/api/styles/{sid}/copy")
+def copy_style(sid: str):
+    return styles.copy_of(sid)
+
+
+@app.post("/api/styles/{sid}/default")
+def default_style(sid: str):
+    try:
+        return {"default": styles.set_default(sid)}
+    except KeyError as e:
+        raise HTTPException(404, "Style not found") from e
+
+
+@app.delete("/api/styles/{sid}")
+def delete_style(sid: str):
+    if sid.startswith("t_"):
+        raise HTTPException(400, "Templates can't be removed")
+    styles.delete(sid)
+    for st in db.query("SELECT id FROM streamers WHERE style_id=?", (sid,)):
+        db.update("streamers", st["id"], style_id="")
+    return {"ok": True}
+
+
+def _sample_clip() -> dict | None:
+    """The newest clip whose original video is still here: the Styles screen previews on it."""
+    for c in db.query("SELECT * FROM clips ORDER BY created DESC LIMIT 40"):
+        ed = (c.get("guard") or {}).get("edit") or {}
+        if ed.get("src") and Path(ed["src"]).exists():
+            return {"clip": c, "edit": ed}
+    return None
+
+
+@app.get("/api/styles/sample")
+def style_sample():
+    got = _sample_clip()
+    if not got:
+        return {"clip_id": None}
+    ed, c = got["edit"], got["clip"]
+    mid = (float(ed["start"]) + float(ed["end"])) / 2
+    words = [w for w in ed.get("words") or [] if mid - 1 <= w["s"] <= mid + 3][:6]
+    made = (c.get("guard") or {}).get("made") or {}
+    return {"clip_id": c["id"], "w": ed.get("w"), "h": ed.get("h"), "at": round(mid, 2), "hook": ed.get("hook", ""),
+            "words": [w["w"] for w in words], "title": c.get("title", ""), "cams": made.get("cams") or []}
+
+
+@app.get("/media/style-frame.jpg")
+def style_frame(at: float = -1):
+    """A still from the sample clip's original video (wide), for drawing the cam box and the part to show."""
+    got = _sample_clip()
+    if not got:
+        raise HTTPException(404, "No video yet")
+    ed = got["edit"]
+    t = at if at >= 0 else (float(ed["start"]) + float(ed["end"])) / 2
+    out = config.DATA / "tmp" / "style_frame.jpg"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([media.need("ffmpeg"), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", ed["src"], "-frames:v", "1",
+                    "-vf", "scale=960:-2", "-q:v", "4", str(out)], check=False, timeout=60)
+    if not out.exists():
+        raise HTTPException(404, "Couldn't read a frame")
+    return FileResponse(out, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+_preview_lock = threading.Lock()
+
+
+@app.post("/api/styles/preview")
+def style_preview(b: dict = Depends(_body)):
+    """Render 7 seconds of the sample clip in the style being edited (saved or not), to see it for real."""
+    got = _sample_clip()
+    if not got:
+        raise HTTPException(400, "Make a clip first: the preview uses your newest clip's video.")
+    if not _preview_lock.acquire(blocking=False):
+        raise HTTPException(409, "A preview is already rendering")
+    try:
+        ed = got["edit"]
+        s0 = float(ed["start"])
+        s1 = min(float(ed["end"]), s0 + 7)
+        words = [w for w in ed.get("words") or [] if s0 - 0.05 <= w["s"] <= s1]
+        out = config.DATA / "tmp" / "style_preview.mp4"
+        quick = {k: False for k in fx.DEFAULTS}      # the look only: no cuts, zooms or sounds
+        pipeline.produce(Path(ed["src"]), out, s0, s1, ed["w"], ed["h"], ed.get("has_audio", True), words,
+                         ed.get("hook", "") or "This is your heading", ed.get("credit", ""), "auto", st=quick,
+                         look={**styles.clean(b), "id": ""})
+        return {"url": f"/media/style-preview.mp4?v={int(time.time())}"}
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from e
+    finally:
+        _preview_lock.release()
+
+
+@app.get("/media/style-preview.mp4")
+def style_preview_file():
+    out = config.DATA / "tmp" / "style_preview.mp4"
+    if not out.exists():
+        raise HTTPException(404, "No preview yet")
+    return FileResponse(out, media_type="video/mp4", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/api/layouts")
 def layouts():
     return {"layouts": [{"id": k, "label": v} for k, v in reframe.LAYOUTS.items()]}
@@ -474,7 +664,9 @@ def _streamer_fields(b: dict) -> dict:
         if k in b:
             out[k] = str(b[k])[:500]
     if "captions" in b:
-        out["captions"] = b["captions"] if b["captions"] in ("auto", "hinglish", "english") else "auto"
+        out["captions"] = b["captions"] if b["captions"] in brain.LANGS else "auto"
+    if "style_id" in b:
+        out["style_id"] = _style_id(b["style_id"])
     for k in ("auto_live", "auto_uploads", "auto_post"):
         if k in b:
             out[k] = 1 if b[k] else 0

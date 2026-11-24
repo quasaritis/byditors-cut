@@ -884,3 +884,118 @@ def test_freeze_frame_callout_and_english_captions(tmp_path, monkeypatch):
     assert pipeline.caption_lang({"meta": {"captions": "english"}}, None) == "english"
     assert pipeline.caption_lang({"meta": {}}, {"captions": "english"}) == "english"
     assert pipeline.caption_lang({"meta": {"captions": "auto"}}, {"captions": "auto"}) == "auto"
+
+
+# ---------------------------------------------------------------- styles (how clips look)
+
+def test_styles_are_cleaned_saved_and_picked(client):
+    from bcut import styles
+    bad = styles.clean({"captions": {"font": "Comic Sans", "size": 9999, "lit": "red", "anim": "spin", "words": 0},
+                        "layout": {"cam": "sideways", "cam_find": "draw", "cam_box": [0.5, 0.5, 0.001, 0.2],
+                                   "part": [-1, 0, 3, 3]}})
+    assert bad["captions"]["font"] == "Anton" and bad["captions"]["size"] == 180 and bad["captions"]["lit"] == "#FFE100"
+    assert bad["captions"]["anim"] == "pop" and bad["captions"]["words"] == 1
+    assert bad["layout"]["cam"] == "top" and bad["layout"]["cam_find"] == "ai" and bad["layout"]["cam_box"] is None
+    assert bad["layout"]["part"] == [0.0, 0.0, 1.0, 1.0]
+    d = client.get("/api/styles").json()
+    assert {s["id"] for s in d["styles"] if s["template"]} >= {"t_default", "t_hype", "t_clean", "t_box"}
+    assert d["fonts"]["Lilita One"]["file"].endswith(".ttf") and "spanish" in d["languages"]
+    assert client.patch("/api/styles/t_default", json={}).status_code == 400          # templates stay as they are
+    mine = client.post("/api/styles/t_box/copy").json()
+    assert mine["name"] == "Box copy" and not mine["template"]
+    assert client.post(f"/api/styles/{mine['id']}/default").json()["default"] == mine["id"]
+    assert styles.get(None)["id"] == mine["id"]
+    job = {"meta": {"style_id": "t_hype"}}
+    assert styles.for_job(job, {"style_id": "t_clean"})["id"] == "t_hype"            # the video's pick wins
+    assert styles.for_job({"meta": {}}, {"style_id": "t_clean"})["id"] == "t_clean"   # then the streamer's
+    assert client.delete(f"/api/styles/{mine['id']}").json()["ok"]
+    assert styles.get(None)["id"] == "t_default"
+    assert client.get("/fonts/..%2F..%2Fserver.py").status_code == 404
+
+
+def test_caption_styles_change_the_subtitles():
+    from bcut import render, styles
+    ws = [{"w": w, "s": 0.2 + i * 0.4, "e": 0.5 + i * 0.4} for i, w in enumerate("bro this is 100 insane okay".split())]
+    plan = {"faces_out": [], "mode": "center"}
+    plain = render.build_ass(ws, 0, 3, "He did it", "", plan)
+    assert plain == render.build_ass(ws, 0, 3, "He did it", "", plan, style=styles.get("t_default"))
+    st = styles.clean({"captions": {"preset": "orangebox", "font": "Poppins Black", "box": "word", "upper": False,
+                                    "words": 2, "key": "#FF0000", "text": "#FFFFFF", "y": 0.5},
+                       "heading": {"look": "white", "whole": True, "upper": False}})
+    ass = render.build_ass(ws, 0, 3, "He did it", "", plan, style=st)
+    assert "Style: Cap,Poppins Black," in ass and "\\p1}m " in ass          # word boxes are drawn shapes
+    assert "He did it" in ass and "HE DID IT" not in ass                 # mixed case heading in a box
+    hook = [ln for ln in ass.splitlines() if ln.startswith("Dialogue: 2,") and "Hook" in ln][0]
+    assert hook.split(",")[2] == "0:00:03.00"                            # kept for the whole clip
+    caps = [ln.rsplit("}", 1)[1] for ln in ass.splitlines() if ln.startswith("Dialogue: 1,")]
+    assert "bro" in caps and "BRO" not in caps
+    assert any("\\c&H000000FF\\" in ln and ln.endswith("}100") for ln in ass.splitlines())   # key word coloured
+    lines = {int(re.search(r"\\(?:pos|move)\(\d+,(\d+)", ln).group(1)) for ln in ass.splitlines() if ln.startswith("Dialogue: 1,")}
+    assert all(abs(y - 960) < 80 for y in lines)                         # where you dragged them
+    off = render.build_ass(ws, 0, 3, "He did it", "", plan, style=styles.clean({"captions": {"show": False},
+                                                                                  "heading": {"show": False}}))
+    assert "Dialogue: 1," not in off and "Dialogue: 2," not in off
+    hindi = render.build_ass([{"w": "भाई", "s": 0.2, "e": 0.6}, {"w": "देखो", "s": 0.6, "e": 1.0}], 0, 2, "", "", plan)
+    assert "Style: Cap,Noto Sans Devanagari," in hindi and "भाई" in hindi
+
+
+def test_style_layouts_render(video, tmp_path):
+    """Zoomed in, cam at the bottom, cam in a rounded corner over a picked part, and a picked part alone."""
+    from bcut import render, reframe, styles
+    pr = probe(video)
+    cams = [{"box": [0.02, 0.6, 0.25, 0.32], "face": [0.15, 0.75]}]
+    corner = {"mode": "split", "cams": cams, "cam_pos": "corner", "corner": {"x": 0.5, "y": 0.6, "w": 0.4},
+              "round": 30, "border": 6, "border_color": "#FFFFFF", "framing": "blur", "part": [300, 0, 900, 720]}
+    plans = {"zoom": {"mode": "zoom"}, "bottom": {"mode": "split", "cams": cams, "cam_pos": "bottom"},
+             "corner": corner, "part": {"mode": "center", "part": [400, 60, 600, 600]}}
+    words = [{"w": w, "s": 0.2 + i * 0.4, "e": 0.5 + i * 0.4} for i, w in enumerate("this is a test okay".split())]
+    for name, plan in plans.items():
+        out = render.render(video, tmp_path / f"{name}.mp4", 10, 12, plan, pr["width"], pr["height"], words,
+                            hook="Hook line", style=styles.get("t_hype"))
+        p = probe(out)
+        assert (p["width"], p["height"]) == (1080, 1920), name
+    g = reframe.panels(plans["bottom"], pr["width"], pr["height"])
+    assert g[0]["out"][1] > 0 and g[-1]["out"][1] == 0                   # cam below, game on top
+    x, y, w, h = reframe.corner_rect(corner, pr["width"], pr["height"])
+    assert abs(x - 540) <= 2 and abs(w - 432) <= 2 and 0 < y < 1920 - h
+    assert reframe._part_px([0.1, 0.1, 0.5, 0.5], 1280, 720) == [128, 72, 640, 360]
+    assert reframe._part_px([0, 0, 1, 1], 1280, 720) is None
+
+
+def test_layout_options_steer_the_plan(video):
+    from bcut import reframe
+    pr = probe(video)
+    blur = reframe.analyse(video, 10, 14, pr["width"], pr["height"], [], "auto", opts={"framing": "blur"})
+    zoom = reframe.analyse(video, 10, 14, pr["width"], pr["height"], [], "auto", opts={"framing": "zoom"})
+    drawn = reframe.analyse(video, 10, 14, pr["width"], pr["height"], [], "auto",
+                            opts={"cam": "corner", "cam_find": "draw", "cam_box": [0.7, 0.05, 0.25, 0.3],
+                                  "corner": {"x": 0.05, "y": 0.1, "w": 0.4}, "round": 20, "border": 4})
+    off = reframe.analyse(video, 10, 14, pr["width"], pr["height"], [], "auto",
+                          opts={"cam": "off", "cam_find": "draw", "cam_box": [0.7, 0.05, 0.25, 0.3]})
+    part = reframe.analyse(video, 10, 14, pr["width"], pr["height"], [], "auto",
+                           opts={"framing": "fill", "part": [0.25, 0, 0.5, 1]})
+    assert blur["mode"] == "wide" and zoom["mode"] == "zoom"
+    assert drawn["mode"] == "split" and drawn["cam_pos"] == "corner" and drawn["cams"][0]["box"][0] == 0.7
+    assert any(r[2] < 400 for r in drawn["text_out"])                    # captions keep off the cam box
+    assert off["mode"] != "split"
+    assert part["part"] == [320, 0, 640, 720] and part["mode"] in ("center", "face")
+
+
+def test_make_clips_options(client, monkeypatch):
+    from bcut import server
+    seen = {}
+    monkeypatch.setattr(server.pipeline, "create_job", lambda kind, **kw: seen.update(kw) or {"id": "j"})
+    client.post("/api/jobs", json={"url": "https://example.com/v", "captions": "spanish", "style_id": "t_clean",
+                                   "count": 99, "min_len": 40, "max_len": 20, "from": 120, "to": 600})
+    m = seen["meta"]
+    assert m["captions"] == "spanish" and m["style_id"] == "t_clean"
+    assert m["options"] == {"count": 30, "min_len": 20, "max_len": 40, "from": 120.0, "to": 600.0}
+    client.post("/api/jobs", json={"url": "https://example.com/v", "captions": "klingon", "style_id": "nope", "to": 5})
+    assert seen["meta"]["captions"] == "auto" and seen["meta"]["style_id"] == "" and seen["meta"]["options"] == {}
+    assert pipeline.caption_lang({"meta": {"captions": "turkish"}}, None) == "turkish"
+    assert pipeline.caption_lang({"meta": {"captions": "hinglish"}}, {"captions": "english"}) == "auto"
+    assert pipeline._range({"from": 60, "to": 120}, 300) == (60.0, 120.0)
+    assert pipeline._range({"from": 60, "to": 65}, 300) == (0.0, 300)
+    sig = {"excite": np.ones(100), "db": np.full(100, -30.0)}
+    only = pipeline._only(sig, 10, 20)
+    assert only["excite"][:20].sum() == 0 and only["excite"][20:41].all() and only["db"][0] == -30

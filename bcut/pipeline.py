@@ -11,7 +11,7 @@ import time
 import traceback
 from pathlib import Path
 
-from . import brain, campaigns, config, db, fx, guard, media, reframe, render, signals, transcribe
+from . import brain, campaigns, config, db, fx, guard, media, reframe, render, signals, styles, transcribe
 
 _q: queue.Queue = queue.Queue()
 _started = False
@@ -59,10 +59,12 @@ def credit_for(streamer: dict | None, info: dict) -> str:
 
 def produce(src: Path, out: Path, start: float, end: float, w: int, h: int, has_audio: bool, words: list[dict],
             hook: str, credit: str, layout: str = "auto", st: dict | None = None, log=print,
-            callout: str = "") -> dict:
+            callout: str = "", look: dict | None = None) -> dict:
     """Edit and render one clip: cut dead air, cold open, layout, punch-ins, sound, captions, loop.
-    Every render (new clips, a layout change, a trim from the Inbox) goes through here."""
+    Every render (new clips, a layout change, a trim from the Inbox) goes through here. `look` is the saved
+    style (captions, heading, layout; bcut.styles), the default one when not given."""
     st = st or fx.style()
+    look = look or styles.get(None)
     edit = fx.plan(src, start, end, words, has_audio, st)
     plain = (not edit.get("cold") and len(edit["pieces"]) == 1 and not st["loop"] and
              abs(edit["pieces"][0][0] - start) < 0.05 and abs(edit["pieces"][0][1] - end) < 0.05)
@@ -75,26 +77,28 @@ def produce(src: Path, out: Path, start: float, end: float, w: int, h: int, has_
             body, b0, b1 = work, 0.0, built["dur"]
             ws = fx.map_words([x for x in words if start - 0.05 <= x["s"] <= end + 0.05], built["timeline"])
         cuts = media.scene_cuts(body, start=b0, max_seconds=b1 - b0) + [b0 + j for j in built["joins"]]
-        plan = reframe.analyse(body, b0, b1, w, h, sorted(cuts), layout)
+        plan = reframe.analyse(body, b0, b1, w, h, sorted(cuts), layout, opts=look.get("layout"))
         ev = fx.events(body, b0, b1 - b0, built, st, has_audio)
         if built.get("freeze"):
             ev["callout"] = {"text": callout or fx.default_callout(hook), "at": built["freeze"]}
         render.render(body, out, b0, b1, plan, w, h, ws, hook=hook, credit=credit, has_audio=has_audio, fx=ev,
-                      grade=st.get("original", False))
+                      grade=st.get("original", False), style=look)
     finally:
         work.unlink(missing_ok=True)
     plan_info = {"mode": plan.get("mode"), "burned": bool(plan.get("burned")),
                  "removed": edit.get("removed", 0), "cold": bool(edit.get("cold")),
-                 "punches": len(ev.get("punches") or []), "speakers": plan.get("speakers")}
+                 "punches": len(ev.get("punches") or []), "speakers": plan.get("speakers"),
+                 "cams": [c.get("box") for c in plan.get("cams") or []]}
     return {"plan": plan, "edit": edit, "fx": ev, "info": plan_info, "dur": round(b1 - b0, 2)}
 
 
 def caption_lang(job: dict, streamer: dict | None) -> str:
-    """"english" (translate captions, hook and title) or "auto" (as spoken: Hinglish stays Hinglish)."""
+    """"auto" (as spoken: Hinglish stays Hinglish) or a language the captions, hook and title are translated
+    into ("english", "spanish", "hindi", ... see brain.LANGS)."""
     pick = (job.get("meta") or {}).get("captions") or "auto"
     if pick == "auto":
         pick = (streamer or {}).get("captions") or "auto"
-    return "english" if pick == "english" else "auto"
+    return pick if pick in brain.TRANSLATE else "auto"
 
 
 def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: list[dict], streamer: dict | None,
@@ -109,13 +113,14 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     # the clip plus 15 s either side (for the trim editor), with Hindi/Hinglish spelling fixed once
     near = brain.fix_spellings(transcribe.words_between(words, c["start"] - 15, c["end"] + 15), log)
     spoken = " ".join(w["w"] for w in transcribe.words_between(near, c["start"], c["end"]))
-    if lang == "english":
-        near = brain.to_english(near, log)
+    if lang != "auto":
+        near = brain.translate(near, lang, log)
     cw = transcribe.words_between(near, c["start"], c["end"])
     credit = (campaigns.rules_of(camp)["credit"] if camp else "") or credit_for(streamer, info)
+    look = styles.for_job(job, streamer)
     made = produce(src, out, c["start"], c["end"], probe["width"], probe["height"], probe["has_audio"], cw,
                    c.get("hook", ""), credit, (streamer or {}).get("layout", "auto"), log=log,
-                   callout=c.get("callout", ""))
+                   callout=c.get("callout", ""), look=look)
     plan = made["plan"]
     thumb = cover(out, out_dir / f"{cid}.jpg", made)
     text = spoken
@@ -135,6 +140,8 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
             report["verdict"], report["auto_post_allowed"] = "review", False
         report["campaign"] = {"id": camp["id"], "name": camp.get("name", "")}
     report["captions_lang"] = lang
+    report["style_id"] = look.get("id") or ""
+    report["style_name"] = look.get("name") or ""
     report["callout"] = c.get("callout", "")
     report["layout"] = plan.get("mode")
     report["edit"] = _edit_info(src, c, probe, near,
@@ -197,8 +204,8 @@ def _edit_info(src: Path, c: dict, probe: dict, words: list[dict], credit: str, 
 
 
 def rerender(clip_id: str, layout: str | None = None, start: float | None = None, end: float | None = None,
-             hook: str | None = None, title: str | None = None) -> dict:
-    """Render a clip again: in another layout, with a new start/end, or a new hook (Inbox → Edit)."""
+             hook: str | None = None, title: str | None = None, style_id: str | None = None) -> dict:
+    """Render a clip again: in another layout or style, with a new start/end, or a new hook (Inbox → Edit)."""
     clip = db.get("clips", clip_id)
     if not clip:
         raise RuntimeError("Clip not found")
@@ -223,13 +230,15 @@ def rerender(clip_id: str, layout: str | None = None, start: float | None = None
     words = [w for w in (ed.get("words") or []) if s0 - 0.05 <= w["s"] <= s1 + 0.05]
     out = Path(clip["file"])
     tmp = out.with_name(out.stem + ".redo.mp4")
+    look = styles.get(style_id if style_id is not None else g.get("style_id"))
     made = produce(src, tmp, s0, s1, ed["w"], ed["h"], ed.get("has_audio", True), words, ed.get("hook", ""),
-                   ed.get("credit", ""), want, callout=g.get("callout", ""))
+                   ed.get("credit", ""), want, callout=g.get("callout", ""), look=look)
     shutil.move(str(tmp), out)
     out.with_name(out.stem + "_tg.mp4").unlink(missing_ok=True)     # phone preview is stale now
     cover(out, Path(clip["thumb"]), made)
     ed["start"], ed["end"] = s0, s1
     g.update(edit=ed, layout=made["plan"].get("mode"), layout_choice=want, made=made["info"],
+             style_id=look.get("id") or "", style_name=look.get("name") or "",
              cover_at=made.get("cover_at"), own_captions=bool(made["plan"].get("burned")))
     fields = {"guard": g, "start": s0, "end": s1, "hook": ed.get("hook", "")}
     if title is not None and title.strip():
@@ -288,11 +297,22 @@ def run_job(jid: str) -> None:
                        job.get("streamer_id"))
         step("Picking clips", 0.55)
         camp = campaigns.for_job(job, streamer)
-        lo, hi = campaigns.lengths(camp, config.CLIP_MIN, config.CLIP_MAX)
-        picks = brain.find_clips(tr["words"], sig, pr["duration"], info.get("title", ""),
+        opt = job["meta"].get("options") or {}
+        lo, hi = campaigns.lengths(camp, int(opt.get("min_len") or config.CLIP_MIN),
+                                   int(opt.get("max_len") or config.CLIP_MAX))
+        words_in, sig_in = tr["words"], sig
+        a, b = _range(opt, pr["duration"])
+        if a > 0 or b < pr["duration"]:
+            # only this part of the video: clips are picked inside it
+            words_in = [w for w in words_in if a <= w["s"] and w["e"] <= b]
+            sig_in = _only(sig, a, b)
+            step(f"Picking clips between {a / 60:.0f} and {b / 60:.0f} min", 0.55)
+        picks = brain.find_clips(words_in, sig_in, pr["duration"], info.get("title", ""),
                                  (streamer or {}).get("name") or info.get("uploader", ""), log=lambda m: step(m),
+                                 n=int(opt.get("count") or 0) or None,
                                  min_len=lo, max_len=hi, lang=caption_lang(job, streamer),
                                  brief=campaigns.rules_of(camp)["notes"] if camp else "")
+        picks = [c for c in picks if c["start"] >= a - 1 and c["end"] <= b + 1]
         meta = {**job["meta"], "language": tr.get("language"), "duration": pr["duration"],
                 "excite": brain.excite_preview(sig), "source": str(src)}
         db.update("jobs", jid, meta=meta)
@@ -308,6 +328,29 @@ def run_job(jid: str) -> None:
         traceback.print_exc()
         db.update("jobs", jid, status="failed", error=str(e)[:600])
         db.log(f"Job failed: {str(e)[:300]}", "error", job.get("streamer_id"))
+
+
+def _range(opt: dict, duration: float) -> tuple[float, float]:
+    """The part of the video to clip from ("from"/"to" in seconds; empty means the start / the end)."""
+    try:
+        a = max(0.0, float(opt.get("from") or 0))
+        b = float(opt.get("to") or 0) or duration
+    except (TypeError, ValueError):
+        return 0.0, duration
+    b = min(duration, b) if duration else b
+    return (a, b) if b - a >= 10 else (0.0, duration)
+
+
+def _only(sig: dict, a: float, b: float) -> dict:
+    """Signals with everything outside a..b silenced, so no clip is picked there."""
+    import numpy as np
+
+    out = dict(sig)
+    for k, v in sig.items():
+        if k != "db" and isinstance(v, np.ndarray) and v.ndim == 1 and len(v):
+            t = np.arange(len(v)) * signals.HOP
+            out[k] = np.where((t >= a) & (t <= b), v, 0 if v.dtype != bool else False).astype(v.dtype)
+    return out
 
 
 def strip_music(clip_id: str) -> dict:

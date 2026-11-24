@@ -248,6 +248,79 @@ tr.click:hover td{background:#151515}
   .hide-m{display:none}
 }
 .mclip{display:none;gap:8px;margin-bottom:18px}
+
+/* ---------- styles: how clips look ---------- */
+.stylegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:18px}
+.scard{display:flex;flex-direction:column;gap:10px;background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit}
+.scard .phone{transition:transform .2s var(--ease-out)}
+@media (hover:hover) and (pointer:fine){.scard:hover .phone{transform:translateY(-2px)}}
+.scard:active .phone{transform:scale(.98)}
+.scard b{font-weight:500;font-size:14px;display:flex;align-items:center;gap:8px}
+.scard small{color:var(--faint);font-size:12px}
+.phone{position:relative;width:100%;aspect-ratio:9/16;border-radius:14px;overflow:hidden;background:#0d0d0d;isolation:isolate;box-shadow:inset 0 0 0 1px #1e1e1e;user-select:none}
+.phone .lay{position:absolute;background-repeat:no-repeat;background-color:#151515}
+.phone .bgblur{position:absolute;inset:-8%;background-size:cover;background-position:center;filter:blur(14px) brightness(.62)}
+.phone .ph-ph{position:absolute;inset:0;display:grid;place-items:center;color:#3a3a3a;font-size:11px;background:repeating-linear-gradient(135deg,#141414 0 10px,#171717 10px 20px)}
+.phone .t{position:absolute;left:50%;transform:translate(-50%,-50%);white-space:nowrap;line-height:1;text-align:center;paint-order:stroke fill;pointer-events:none}
+.phone .t.drag{pointer-events:auto;cursor:grab;touch-action:none}
+.phone .t.drag:active{cursor:grabbing}
+.phone .t.drag::after{content:"";position:absolute;inset:-6px -10px;border:1.5px dashed transparent;border-radius:8px;transition:border-color .15s ease}
+.phone:hover .t.drag::after{border-color:rgba(255,255,255,.45)}
+.phone .t .w{display:inline-block;position:relative;margin:0 .07em}
+.phone .t .w i{position:absolute;z-index:-1;inset:-.08em -.14em;border-radius:.2em}
+.phone .tag{position:absolute;font:600 10px/1 "Inter";padding:3px 6px;border-radius:5px;background:#ff6a1a;color:#fff;transform:translate(-50%,-100%);left:50%;top:-6px;opacity:0;transition:opacity .15s ease;pointer-events:none}
+.phone:hover .tag{opacity:1}
+.phone .camov{position:absolute;overflow:hidden;background-repeat:no-repeat;background-color:#222}
+.phone .credit{position:absolute;right:4%;top:3.5%;font:600 9px/1 "Inter";color:rgba(255,255,255,.75)}
+.seditor{display:grid;grid-template-columns:340px minmax(0,1fr);gap:28px;align-items:start}
+.seditor .stage{position:sticky;top:16px;display:flex;flex-direction:column;gap:10px}
+.seditor .stage video{width:100%;aspect-ratio:9/16;border-radius:14px;background:#000;display:block}
+.stabs{display:flex;gap:4px;background:var(--surface);border-radius:999px;padding:4px;width:max-content;margin-bottom:16px}
+.stabs button{height:32px;padding:0 16px;border-radius:999px;border:0;background:none;color:var(--nav);cursor:pointer;font-weight:500;transition:background-color .15s ease,color .15s ease}
+.stabs button[aria-selected=true]{background:var(--raised);color:var(--text)}
+.sgroup{padding:18px 0;border-top:1px solid var(--border)}
+.sgroup:first-child{border-top:0;padding-top:0}
+.sgroup>h3{font-size:13px;font-weight:600;margin:0 0 10px;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px}
+.tilebtn{background:var(--surface);border:1.5px solid transparent;border-radius:12px;padding:6px 6px 8px;cursor:pointer;display:flex;flex-direction:column;gap:6px;align-items:stretch;color:var(--muted);font-size:12px;transition:border-color .15s ease,transform .16s var(--ease-out)}
+.tilebtn:active{transform:scale(.97)}
+.tilebtn[aria-pressed=true]{border-color:var(--accent);color:var(--text)}
+.tilebtn .sw{height:62px;border-radius:8px;display:grid;place-items:center;overflow:hidden;background:linear-gradient(180deg,#3d4a2a,#1f2a1a 55%,#2a2416)}
+.tilebtn .sw span{white-space:nowrap;line-height:1;paint-order:stroke fill}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips .chip{height:32px;font-size:13px}
+.chips .chip.font{font-size:16px;letter-spacing:.01em}
+.srow{display:grid;grid-template-columns:150px 1fr 48px;align-items:center;gap:12px;margin:6px 0;font-size:13px}
+.srow input[type=range]{width:100%;accent-color:var(--accent)}
+.srow output{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+.colors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.colors label{display:flex;align-items:center;gap:10px;background:#0a0a0a;border:1px solid #232323;border-radius:10px;padding:6px 10px;font-size:13px;cursor:pointer}
+.colors input[type=color]{width:26px;height:26px;border:0;padding:0;background:none;border-radius:6px;cursor:pointer}
+.colors input[type=color]::-webkit-color-swatch-wrapper{padding:0}.colors input[type=color]::-webkit-color-swatch{border:1px solid #333;border-radius:6px}
+.drawbox{position:relative;max-width:560px;border-radius:10px;overflow:hidden;background:#111;touch-action:none;cursor:crosshair;margin-top:10px;user-select:none}
+.drawbox img{display:block;width:100%}
+.drawbox .rect{position:absolute;border:2px solid var(--accent);background:rgba(198,242,78,.12);border-radius:4px;cursor:move}
+.drawbox .rect::after{content:"";position:absolute;right:-6px;bottom:-6px;width:12px;height:12px;border-radius:3px;background:var(--accent);cursor:nwse-resize}
+.drawbox .rect span{position:absolute;left:-2px;top:-22px;font:600 11px/1 "Inter";background:var(--accent);color:#000;padding:4px 6px;border-radius:5px 5px 5px 0}
+.drawbox .rect.ai{border-style:dashed;border-color:#b57bff;background:rgba(181,123,255,.12);cursor:default}
+.drawbox .rect.ai::after{display:none}.drawbox .rect.ai span{background:#b57bff;color:#fff}
+.sname{field-sizing:content;min-width:120px;max-width:min(420px,60vw);background:none;border:0;border-bottom:1px solid transparent;font:600 var(--fs-title)/1.2 "Inter";color:var(--text);padding:2px 0;outline:none;transition:border-color .15s ease}
+.sname:hover,.sname:focus{border-bottom-color:#444}
+/* clip options popover under the top bar */
+.optbtn{width:var(--ctl);padding:0;justify-content:center}
+.optbtn[aria-expanded=true]{background:var(--text);color:#000}
+.optbtn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round}
+.clipopts{position:fixed;top:60px;left:250px;width:min(640px,calc(100vw - 270px));background:#121212;border:1px solid #262626;border-radius:16px;padding:18px;z-index:15;box-shadow:0 18px 50px rgba(0,0,0,.6);transform-origin:top left;transition:opacity .16s ease,transform .2s var(--ease-out)}
+.clipopts[data-hide]{opacity:0;transform:translateY(-4px) scale(.98);pointer-events:none}
+.clipopts .fgrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.clipopts h3{margin:0 0 12px;font-size:14px;font-weight:600}
+.stepper{display:flex;align-items:center;background:#0a0a0a;border:1px solid #2a2a2a;border-radius:10px;height:40px}
+.stepper button{width:36px;height:100%;border:0;background:none;color:var(--muted);cursor:pointer;font-size:16px}
+.stepper button:active{color:var(--text)}
+.stepper input{flex:1;min-width:0;background:none;border:0;text-align:center;outline:none;font-variant-numeric:tabular-nums;font-size:15px}
+.stepper small{color:var(--faint);padding-right:10px;font-size:12px}
+@media (max-width:1180px){.seditor{grid-template-columns:280px minmax(0,1fr)}}
+@media (max-width:860px){.seditor{grid-template-columns:1fr}.seditor .stage{position:static;max-width:300px}.clipopts{left:12px;width:calc(100vw - 24px)}.clipopts .fgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (prefers-reduced-motion:reduce){*{transition-duration:.01ms!important;animation-duration:.6s!important}}
 </style>
 </head>
@@ -261,8 +334,8 @@ tr.click:hover td{background:#151515}
     <form class="clipbar" id="clipform">
       <input id="clipurl" type="url" aria-label="Video or stream link to clip" placeholder="Paste a YouTube, Kick, Twitch or TikTok link to clip" required>
       <select class="field" id="cliprights" aria-label="Whose video is this?" style="width:auto;height:var(--ctl);border-radius:999px" title="Clips of videos that are yours, or that you have permission for, can be posted automatically"><option value="unknown">Clip only</option><option value="own">It's my video</option><option value="permission">I have permission</option></select>
-      <select class="field" id="clipcaps" aria-label="Caption language" style="width:auto;height:var(--ctl);border-radius:999px" title="Captions as spoken (Hinglish stays Hinglish, in Roman letters), or translated to English"><option value="auto">Hinglish / as spoken</option><option value="english">English captions</option></select>
       <select class="field" id="clipcamp" aria-label="Campaign" style="width:auto;height:var(--ctl);border-radius:999px" hidden title="Make these clips for a paid campaign: its rules apply"><option value="">No campaign</option></select>
+      <button class="btn optbtn" type="button" id="optbtn" aria-expanded="false" aria-controls="clipopts" aria-label="Clip options" title="Clip options: how many, how long, which part, captions, style"><svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
       <button class="btn primary" type="submit">Make clips</button>
       <label class="btn ghost" for="upfile" tabindex="0">Upload</label>
       <input id="upfile" type="file" accept="video/*" hidden>
@@ -273,16 +346,30 @@ tr.click:hover td{background:#151515}
     <a href="#today" data-v="today"><svg viewBox="0 0 24 24"><path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>Today</a>
     <a href="#inbox" data-v="inbox"><svg viewBox="0 0 24 24"><path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13L20 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6z"/></svg>Clip inbox<span class="count" id="c-inbox" hidden></span></a>
     <a href="#streamers" data-v="streamers"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="11" r="2.5"/></svg>Streamers</a>
+    <a href="#styles" data-v="styles"><svg viewBox="0 0 24 24"><path d="M14.5 4.5 19.5 9.5 10 19H5v-5z"/><path d="M12.5 6.5l5 5"/></svg>Styles</a>
     <a href="#campaigns" data-v="campaigns"><svg viewBox="0 0 24 24"><path d="M12 3v18M16.5 7.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 2 2.6 4.5 3 4.5 1.4 4.5 3.3-2 3.2-4.5 3.2-4.5-1.4-4.5-3.2"/></svg>Campaigns</a>
     <h6>Publishing</h6>
     <a href="#queue" data-v="queue"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 9h16M9 3v4M15 3v4"/></svg>Post queue<span class="count" id="c-failed" hidden></span></a>
     <a href="#accounts" data-v="accounts"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 1 0-5.7l2.3-2.3a4 4 0 0 1 5.7 5.7l-1.2 1.1"/><path d="M14 10a4 4 0 0 1 0 5.7l-2.3 2.3a4 4 0 0 1-5.7-5.7l1.2-1.1"/></svg>Accounts</a>
     <a href="#settings" data-v="settings"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Guard &amp; settings</a>
-    <div class="foot" id="tools"></div>
+    <div class="foot"><div id="tools"></div><a href="https://github.com/quasaritis/byditors-cut/issues/new" target="_blank" rel="noopener" style="display:flex;height:auto;padding:8px 0 0;color:var(--muted)">Feedback &amp; ideas ↗</a></div>
   </nav>
   <main id="main" tabindex="-1"></main>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" data-hide></div>
+<div class="clipopts" id="clipopts" role="dialog" aria-label="Clip options" data-hide>
+  <h3>Clip options <span class="faint" style="font-weight:400;font-size:12px">&nbsp;Used for the next link or upload</span></h3>
+  <div class="fgrid">
+    <div><label class="f" for="o-streamer">Streamer</label><select class="field" id="o-streamer"><option value="">No streamer</option></select></div>
+    <div><label class="f" for="o-style">Style</label><select class="field" id="o-style"></select></div>
+    <div><label class="f" for="o-lang">Caption language</label><select class="field" id="o-lang"></select></div>
+    <div><label class="f" for="o-count">Clips</label><div class="stepper"><button type="button" data-step="o-count:-1" aria-label="Fewer">−</button><input id="o-count" inputmode="numeric" value="6" aria-label="How many clips"><button type="button" data-step="o-count:1" aria-label="More">+</button></div></div>
+    <div><label class="f" for="o-min">Shortest</label><div class="stepper"><button type="button" data-step="o-min:-5" aria-label="Shorter">−</button><input id="o-min" inputmode="numeric" value="15"><small>s</small><button type="button" data-step="o-min:5" aria-label="Longer">+</button></div></div>
+    <div><label class="f" for="o-max">Longest</label><div class="stepper"><button type="button" data-step="o-max:-5" aria-label="Shorter">−</button><input id="o-max" inputmode="numeric" value="60"><small>s</small><button type="button" data-step="o-max:5" aria-label="Longer">+</button></div></div>
+    <div class="wide"><label class="f">Part of the video</label><div style="display:flex;gap:8px;align-items:center"><input class="field" id="o-from" inputmode="decimal" placeholder="Start" style="width:120px"><span class="faint">to</span><input class="field" id="o-to" inputmode="decimal" placeholder="End" style="width:120px"><span class="faint" style="font-size:13px">minutes · leave empty for the whole video</span></div></div>
+  </div>
+  <div class="acts" style="margin-top:14px"><button type="button" class="btn ghost sm" id="o-reset">Back to the usual</button><a class="btn ghost sm" href="#styles">Edit styles</a><button type="button" class="btn primary sm" id="o-done" style="margin-left:auto">Done</button></div>
+</div>
 
 <script>
 const $ = (s, el = document) => el.querySelector(s);
@@ -320,7 +407,7 @@ const PLAT = {instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok", face
 /* ---------------- routing ---------------- */
 function route() {
   const v = (location.hash.slice(1).split("/")[0]) || "today";
-  S.view = ["today","inbox","streamers","queue","accounts","settings"].includes(v) ? v : "today";
+  S.view = ["today","inbox","streamers","styles","campaigns","queue","accounts","settings"].includes(v) ? v : "today";
   S.sel = location.hash.split("/")[1] || null;
   document.querySelectorAll(".side a[data-v]").forEach(a => a.dataset.v === S.view ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current"));
   render();
@@ -425,7 +512,7 @@ function musicSVG(curve) {
 }
 async function showClip(id) {
   const box = $("#detail"); if (!box) return;
-  const [c, accs] = await Promise.all([api(`/api/clips/${id}`), api("/api/accounts")]);
+  const [c, accs] = await Promise.all([api(`/api/clips/${id}`), api("/api/accounts"), styleData().catch(() => null)]);
   const g = c.guard || {}, checks = g.checks || [];
   const status = {ok: "Passed", warn: "Note", review: "Look at this", block: "Blocked"};
   const caps = c.captions || {};
@@ -434,7 +521,7 @@ async function showClip(id) {
   const done = c.state === "posted" || c.state === "queued";
   box.innerHTML = `<div class="detail">
     <div class="player"><video src="/media/clip/${c.id}.mp4?v=${S.bust || 0}" controls playsinline preload="metadata" poster="/media/thumb/${c.id}.jpg?v=${S.bust || 0}"></video>
-      <dl><dt>Length</dt><dd>${dur(c.duration)}</dd><dt>From</dt><dd>${dur(c.start)}–${dur(c.end)}</dd><dt>Layout</dt><dd>${esc(LAYOUT[g.layout] || g.layout || "–")}</dd><dt>Score</dt><dd>${Math.round(c.score)}</dd></dl>
+      <dl><dt>Length</dt><dd>${dur(c.duration)}</dd><dt>From</dt><dd>${dur(c.start)}–${dur(c.end)}</dd><dt>Layout</dt><dd>${esc(LAYOUT[g.layout] || g.layout || "–")}</dd>${g.style_name ? `<dt>Style</dt><dd>${esc(g.style_name)}</dd>` : ""}<dt>Score</dt><dd>${Math.round(c.score)}</dd></dl>
       ${c.can_relayout && c.window ? `<div class="trim"><h3>Edit this clip</h3>
         <video id="srcv" src="/media/source/${c.id}.mp4" controls playsinline preload="metadata"></video>
         <div class="trimrow"><label for="t-s">Start</label><input type="range" id="t-s" min="0" max="${(c.window.to - c.window.from).toFixed(1)}" step="0.1" value="${(c.window.start - c.window.from).toFixed(1)}"><output id="o-s"></output><button type="button" class="btn ghost sm" data-mark="s">Set to player</button></div>
@@ -442,8 +529,9 @@ async function showClip(id) {
         <p class="hint" id="t-len"></p>
         <label class="f" for="t-hook">Hook on screen</label><input class="field" id="t-hook" maxlength="120" value="${esc(c.window.hook || "")}" placeholder="Leave empty for no hook">
         ${g.layout !== "fit" ? `<label class="f" for="lay" style="margin-top:12px">Layout</label><select class="field" id="lay">${["auto","split","face","speaker","stack","wide","center"].map(k => `<option value="${k}" ${(g.layout_choice || "auto") === k ? "selected" : ""}>${LAYOUT[k]}</option>`).join("")}</select>` : ""}
+        ${SD ? `<label class="f" for="cstyle" style="margin-top:12px">Style</label><select class="field" id="cstyle">${SD.styles.map(s => `<option value="${s.id}" ${(g.style_id || SD.default) === s.id ? "selected" : ""}>${esc(s.name)}${s.template ? " (template)" : ""}</option>`).join("")}</select>` : ""}
         <div class="acts" style="margin-top:12px"><button class="btn sm" type="button" id="t-play">Play the selection</button><button class="btn primary sm" type="button" id="relay">Render again</button></div>
-        <p class="hint">Takes about a minute. Dead air, cold open, zooms and sounds are redone for the new cut.</p></div>` : ""}
+        <p class="hint">Takes about a minute. Dead air, cold open, zooms and sounds are redone for the new cut, in the style you picked.</p></div>` : ""}
       <div class="acts" style="margin:12px 4px 4px"><a class="btn ghost sm" href="/media/clip/${c.id}.mp4" download>Download</a></div></div>
     <div class="col">
       <section class="card" aria-labelledby="h-guard"><div class="verdict ${c.verdict}"><strong id="h-guard">${VERDICT[c.verdict] || c.verdict}</strong><span class="muted">${esc(c.title)}</span></div>
@@ -493,7 +581,7 @@ async function showClip(id) {
     $("#t-play").onclick = () => { sv.currentTime = +ts.value; stopAt = +te.value; sv.play(); };
     draw();
     $("#relay").onclick = e => act(e.currentTarget, async () => {
-      await api(`/api/clips/${id}/edit`, {method: "POST", body: {start: w.from + +ts.value, end: w.from + +te.value, hook: $("#t-hook").value, layout: $("#lay")?.value, title: $("#ctitle").value}});
+      await api(`/api/clips/${id}/edit`, {method: "POST", body: {start: w.from + +ts.value, end: w.from + +te.value, hook: $("#t-hook").value, layout: $("#lay")?.value, title: $("#ctitle").value, style_id: $("#cstyle")?.value}});
       S.bust = Date.now(); showClip(id); }, "Rendered");
   }
   $("#recheck").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/recheck`, {method: "POST"}); showClip(id); }, "Checked again");
@@ -512,7 +600,8 @@ function streamerForm(s = {}, accs = []) {
     <div><label class="f" for="s-note">Proof of permission</label><input class="field" id="s-note" name="rights_note" value="${esc(s.rights_note)}" placeholder="Link to their clip-program rules or your email thread"></div>
     <div><label class="f" for="s-layout">Vertical layout</label><select class="field" id="s-layout" name="layout">${["auto","split","face","speaker","stack","wide","center"].map(k => `<option value="${k}" ${((s.layout === "blur" ? "wide" : s.layout)||"auto") === k ? "selected" : ""}>${LAYOUT[k]}</option>`).join("")}</select></div>
     <div><label class="f" for="s-lang">Language</label><select class="field" id="s-lang" name="language">${[["","Detect"],["hi","Hindi / Hinglish"],["en","English"],["ur","Urdu"],["ta","Tamil"],["te","Telugu"],["bn","Bengali"],["mr","Marathi"],["es","Spanish"]].map(([k,l]) => `<option value="${k}" ${(s.language||"") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <div><label class="f" for="s-caps">Captions</label><select class="field" id="s-caps" name="captions">${[["auto","As spoken (Hinglish in Roman letters)"],["english","English (translated)"]].map(([k,l]) => `<option value="${k}" ${(s.captions || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select><p class="hint">English also writes the hook and title in English.</p></div>
+    <div><label class="f" for="s-caps">Captions</label><select class="field" id="s-caps" name="captions">${Object.entries(SD?.languages || {auto: "As spoken", english: "English"}).map(([k,l]) => `<option value="${k}" ${(s.captions || "auto") === k ? "selected" : ""}>${k === "auto" ? "As spoken (Hinglish in Roman letters)" : esc(l)}</option>`).join("")}</select><p class="hint">Another language also writes the hook and title in it (needs the AI).</p></div>
+    <div><label class="f" for="s-style">Style</label><select class="field" id="s-style" name="style_id"><option value="">Your default style</option>${(SD?.styles || []).map(x => `<option value="${x.id}" ${s.style_id === x.id ? "selected" : ""}>${esc(x.name)}${x.template ? " (template)" : ""}</option>`).join("")}</select><p class="hint">How their clips look. <a href="#styles">Edit styles</a></p></div>
     <div class="wide">
       <div class="swrow"><div><b>Clip their lives</b><p>Record as soon as they go live and cut the spikes while they stream.</p></div><span class="tog"><input type="checkbox" name="auto_live" aria-label="Clip their lives" ${s.auto_live !== 0 ? "checked" : ""}><span></span></span></div>
       <div class="swrow"><div><b>Clip new uploads</b><p>New videos and VODs are downloaded and clipped. Their back catalogue is skipped.</p></div><span class="tog"><input type="checkbox" name="auto_uploads" aria-label="Clip new uploads" ${s.auto_uploads !== 0 ? "checked" : ""}><span></span></span></div>
@@ -522,7 +611,7 @@ function streamerForm(s = {}, accs = []) {
   </div><div class="acts" style="margin-top:6px"><button class="btn primary">${s.id ? "Save changes" : "Add streamer"}</button>${s.id ? `<button type="button" class="btn ghost" id="s-cancel">Close</button><button type="button" class="btn danger" id="s-del" style="margin-left:auto">Remove ${esc(s.name)}</button>` : ""}</div></form>`;
 }
 async function viewStreamers() {
-  const [list, accs] = await Promise.all([api("/api/streamers"), api("/api/accounts"), loadState()]);
+  const [list, accs] = await Promise.all([api("/api/streamers"), api("/api/accounts"), loadState(), styleData().catch(() => null)]);
   const edit = S.sel && list.find(s => s.id === S.sel);
   const rows = list.map(s => {
     const st = s.status || {};
@@ -544,7 +633,7 @@ async function viewStreamers() {
   const bindForm = () => {
     const f = $("#sform"); if (!f) return;
     f.onsubmit = e => { e.preventDefault(); const fd = new FormData(f);
-      const body = {name: fd.get("name"), credit: fd.get("credit"), channels: fd.get("channels"), rights: fd.get("rights"), rights_note: fd.get("rights_note"), layout: fd.get("layout"), language: fd.get("language"), captions: fd.get("captions"),
+      const body = {name: fd.get("name"), credit: fd.get("credit"), channels: fd.get("channels"), rights: fd.get("rights"), rights_note: fd.get("rights_note"), layout: fd.get("layout"), language: fd.get("language"), captions: fd.get("captions"), style_id: fd.get("style_id"),
         auto_live: !!fd.get("auto_live"), auto_uploads: !!fd.get("auto_uploads"), auto_post: !!fd.get("auto_post"), post_to: fd.getAll("post_to")};
       act(f.querySelector(".btn.primary"), async () => { await api(edit ? `/api/streamers/${edit.id}` : "/api/streamers", {method: edit ? "PATCH" : "POST", body}); location.hash = "#streamers"; viewStreamers(); }, edit ? "Saved" : "Added — checking their channels now"); };
     if ($("#s-cancel")) $("#s-cancel").onclick = () => location.hash = "#streamers";
@@ -760,18 +849,325 @@ async function viewCampaigns() {
   };
 }
 
-const VIEWS = {today: viewToday, inbox: viewInbox, streamers: viewStreamers, campaigns: viewCampaigns, queue: viewQueue, accounts: viewAccounts, settings: viewSettings};
+/* ---------------- Styles: how clips look ---------------- */
+let SD = null, SAMPLE, ED = null;
+const fontsIn = new Set();
+async function styleData(force = false) {
+  if (!SD || force) {
+    SD = await api("/api/styles");
+    let css = "";
+    for (const [n, f] of Object.entries(SD.fonts)) if (!fontsIn.has(n)) { fontsIn.add(n); css += `@font-face{font-family:"BC ${n}";src:url(/fonts/${f.file}) format("truetype");font-display:block}`; }
+    if (css) { const el = document.createElement("style"); el.textContent = css; document.head.append(el); }
+  }
+  return SD;
+}
+async function sampleClip() {
+  if (SAMPLE === undefined) { try { SAMPLE = await api("/api/styles/sample"); } catch (e) { SAMPLE = {clip_id: null}; } }
+  return SAMPLE;
+}
+const ff = n => `'BC ${n}',Impact,sans-serif`;   // single quotes: it goes inside style="..."
+const U = p => `calc(${(+p).toFixed(2)}cqw / 10.8)`;                 // 1080-wide screen pixels -> phone units
+const pc = (v, of) => `${(v / of * 100).toFixed(3)}%`;
+const KEYW = new Set("insane crazy no way what bro omg wow never always money free best worst first last biggest huge dead win won lost lose fire bhai pagal kya nahi sach paisa paise crore lakh".split(" "));
+const isKey = w => { const x = w.replace(/["'“”‘’.,;:]/g, "").toLowerCase(); return !!x && (/\d/.test(x) || /!$/.test(w) || KEYW.has(x.replace(/[?!]+$/, ""))); };
+const HEADLOOK = {outline: ["#FFFFFF", null, 1, 4, 0], white: ["#111111", "#FFFFFF", 0, 0, 0], dark: ["#FFFFFF", "#111111", 0, 0, 0],
+  orange: ["#FFFFFF", "#FF6A1A", 0, 0, 0], comic: ["#FFE100", null, 1.4, 7, -3], banner: ["#111111", "#FFE100", 0, 0, 0], plain: ["#FFFFFF", null, 0, 3, 0]};
+
+function fontPx(font, sizePct, k = 1) {            // ASS size (full height) -> CSS font-size, both in screen px
+  const f = SD.fonts[font] || {base: 140, em: 0.6};
+  return {ass: f.base * k * sizePct / 100, css: f.base * k * sizePct / 100 * f.em};
+}
+function textCSS(color, outline, shadow) {
+  return `color:${color};-webkit-text-stroke:${U(outline * 2)} #000;text-shadow:${shadow ? `${U(shadow)} ${U(shadow)} 0 rgba(0,0,0,.55)` : "none"}`;
+}
+
+/* where each part of the source lands on the 1080x1920 screen: a small copy of bcut/reframe.py */
+function phonePlan(st, smp) {
+  const W = smp?.w || 1920, H = smp?.h || 1080, L = st.layout;
+  const area = L.part || [0, 0, 1, 1];
+  const vertical = H >= W * 1.2;
+  let cams = L.cam_find === "draw" && L.cam_box ? [L.cam_box] : (smp?.cams?.length ? smp.cams : (smp?.clip_id ? null : [[0.02, 0.62, 0.25, 0.33]]));
+  if (cams && cams.length > 1) { const x0 = Math.min(...cams.map(c => c[0])), y0 = Math.min(...cams.map(c => c[1])), x1 = Math.max(...cams.map(c => c[0] + c[2])), y1 = Math.max(...cams.map(c => c[1] + c[3])); cams = [[x0, y0, x1 - x0, y1 - y0]]; }
+  const out = {W, H, panels: [], blur: false, cam: null};
+  const cover = (rect, o) => ({rect, out: o});
+  const fitIn = (a, ow, oh) => { const aw = a[2] * W, ah = a[3] * H, gw = Math.min(aw, ah * ow / oh), gh = Math.min(ah, gw * oh / ow);
+    return [(a[0] * W + (aw - gw) / 2) / W, (a[1] * H + (ah - gh) / 2) / H, gw / W, gh / H]; };
+  const whole = a => { const fh = 1080 * a[3] * H / (a[2] * W); out.blur = true; return cover(a, [0, (1920 - fh) / 2 - 60, 1080, fh]); };
+  const zoom = a => { out.blur = true; return cover(fitIn(a, 1080, 1350), [0, (1920 - 1350) / 2 - 60, 1080, 1350]); };
+  if (vertical) { out.panels.push(cover(fitIn([0, 0, 1, 1], 1080, 1920), [0, 0, 1080, 1920])); out.spots = {cap: 1300, hook: 330}; return out; }
+  if (cams && L.cam !== "off") {
+    const c = cams[0], bw = c[2] * W, bh = c[3] * H;
+    if (L.cam === "corner") {
+      const w = Math.min(0.7, Math.max(0.2, L.corner.w)) * 1080, h = Math.min(960, Math.max(230, w * bh / bw));
+      const b = L.border, x = Math.min(1080 - w - b, Math.max(b, L.corner.x * 1080)), y = Math.min(1920 - h - b, Math.max(b, L.corner.y * 1920));
+      out.panels.push(L.framing === "blur" ? whole(area) : L.framing === "zoom" ? zoom(area) : cover(fitIn(area, 1080, 1920), [0, 0, 1080, 1920]));
+      out.cam = {rect: c, out: [x, y, w, h]};
+      out.spots = {cap: 1300, hook: 330};
+    } else {
+      const top = Math.round(Math.min(900, Math.max(640, 1080 * bh / bw)) / 2) * 2, bot = 1920 - top;
+      const camY = L.cam === "bottom" ? bot : 0, gameY = L.cam === "bottom" ? 0 : top;
+      out.panels.push(cover(c, [0, camY, 1080, top]), cover(fitIn(area, 1080, bot), [0, gameY, 1080, bot]));
+      out.spots = L.cam === "bottom" ? {cap: 1920 - top, hook: 330} : {cap: top, hook: top + 300};
+    }
+    return out;
+  }
+  if (L.framing === "blur") { const p = whole(area); out.panels.push(p); out.spots = {cap: Math.min(1400, p.out[1] + p.out[3] + 120), hook: Math.max(300, p.out[1] - 160)}; }
+  else if (L.framing === "zoom") { const p = zoom(area); out.panels.push(p); out.spots = {cap: Math.min(1400, p.out[1] + 1350 - 150), hook: Math.max(300, p.out[1] - 40)}; }
+  else { out.panels.push(cover(fitIn(area, 1080, 1920), [0, 0, 1080, 1920])); out.spots = {cap: 1300, hook: 330}; }
+  return out;
+}
+function bgStyle(img, plan, rect, o) {
+  const {W, H} = plan, s = Math.max(o[2] / (rect[2] * W), o[3] / (rect[3] * H));
+  const ox = rect[0] * W + (rect[2] * W - o[2] / s) / 2, oy = rect[1] * H + (rect[3] * H - o[3] / s) / 2;
+  return `left:${pc(o[0], 1080)};top:${pc(o[1], 1920)};width:${pc(o[2], 1080)};height:${pc(o[3], 1920)};${img ? `background-image:url(${img});background-size:${U(W * s)} ${U(H * s)};background-position:${U(-ox * s)} ${U(-oy * s)}` : ""}`;
+}
+function phoneHTML(st, smp, edit = false) {
+  const plan = phonePlan(st, smp), img = smp?.clip_id ? `/media/style-frame.jpg?at=${smp.at}&c=${smp.clip_id}` : "";
+  let h = plan.blur && img ? `<div class="bgblur" style="background-image:url(${img})"></div>` : "";
+  h += plan.panels.map(p => `<div class="lay" style="${bgStyle(img, plan, p.rect, p.out)}"></div>`).join("");
+  if (!img) h = `<div class="ph-ph">Make a clip to preview on your own video</div>` + plan.panels.map(p => `<div class="lay" style="${bgStyle("", plan, p.rect, p.out)};background:linear-gradient(160deg,#2b3a26,#141c12 60%,#2a2215);opacity:.9"></div>`).join("");
+  if (plan.cam) { const L = st.layout, o = plan.cam.out, b = L.border;
+    h += `<div class="camov${edit ? " cdrag" : ""}" data-drag="corner" style="${bgStyle(img, plan, plan.cam.rect, o)};${img ? "" : "background:#3b2f2a;"}border-radius:${U(L.round)};box-shadow:0 0 0 ${U(b)} ${L.border_color};${edit ? "cursor:grab;touch-action:none" : ""}"></div>`; }
+  h += `<span class="credit">@creator</span>`;
+  const sp = plan.spots, cs = st.captions, hs = st.heading;
+  if (hs.show) {
+    const [ink, box, outl, shad, tilt] = HEADLOOK[hs.look] || HEADLOOK.outline, f = fontPx(hs.font, hs.size, 0.7);
+    let txt = smp?.hook || "He actually did it"; if (hs.upper) txt = txt.toUpperCase();
+    let y = hs.y != null ? hs.y * 1920 : sp.hook;
+    if (plan.cam && hs.y == null) { const o = plan.cam.out; if (y > o[1] - 90 && y < o[1] + o[3] + 90) y = o[1] < 700 ? o[1] + o[3] + 110 : o[1] - 110; }   // keeps off the cam box, like the render
+    const ol = Math.max(5, Math.round(f.ass / 15)) * outl;
+    const boxCss = box ? `background:${box};padding:${U(f.css * 0.22)} ${U(f.css * 0.34)};border-radius:${hs.look === "banner" ? 0 : U(f.css * 0.3)};${hs.look === "banner" ? `width:${U(1080)};box-sizing:border-box;` : ""}` : "";
+    h += `<div class="t${edit ? " drag" : ""}" data-drag="heading" style="top:${pc(y, 1920)};font:${U(f.css)}/1.08 ${ff(hs.font)};${textCSS(ink, box ? 0 : ol, shad)};${boxCss}white-space:normal;width:max-content;max-width:${U(hs.look === "banner" ? 1080 : 900)};${tilt ? `transform:translate(-50%,-50%) rotate(${tilt}deg);` : ""}">${edit ? `<span class="tag">Heading</span>` : ""}${esc(txt)}</div>`;
+  }
+  if (cs.show) {
+    const f = fontPx(cs.font, cs.size), words = (smp?.words?.length ? smp.words : ["he", "actually", "did", "that!"]).slice(0, cs.words);
+    const lit = Math.min(1, words.length - 1), ol = Math.max(6, Math.round(f.ass / 15)) * cs.outline / 100, sh = 5 * cs.shadow / 100;
+    const y = cs.y != null ? cs.y * 1920 : sp.cap, grow = ["pop", "bounce"].includes(cs.anim) ? 1.1 : cs.anim === "slide" ? 1.06 : 1;
+    const ws = words.map((w, i) => { let t = cs.upper ? w.toUpperCase() : w; t = t.replace(/[,.;:]+$/, "");
+      const c = i === lit ? cs.lit : (isKey(w) && cs.key !== cs.text ? cs.key : cs.text);
+      return `<span class="w" style="color:${c};${i === lit ? `transform:scale(${grow})` : ""}">${i === lit && cs.box === "word" ? `<i style="background:${cs.box_color}"></i>` : ""}${esc(t)}</span>`; }).join(" ");
+    const lineBox = cs.box === "line" ? `background:${cs.box_color}e6;padding:${U(f.css * 0.22)} ${U(f.css * 0.3)};border-radius:${U(f.css * 0.28)};` : "";
+    h += `<div class="t${edit ? " drag" : ""}" data-drag="captions" style="top:${pc(y, 1920)};font:${U(f.css)}/1 ${ff(cs.font)};${textCSS(cs.text, ol, sh)};${lineBox}">${edit ? `<span class="tag">Captions</span>` : ""}${ws}</div>`;
+  }
+  return `<div class="phone" style="container-type:inline-size">${h}</div>`;
+}
+
+async function viewStyles() {
+  await Promise.all([styleData(true), sampleClip(), loadState()]);
+  if (S.sel) return styleEditor(S.sel);
+  ED = null;
+  const mine = SD.styles.filter(s => !s.template), tpl = SD.styles.filter(s => s.template);
+  const card = s => `<button class="scard" data-open="${s.id}">${phoneHTML(s, SAMPLE)}<div><b>${esc(s.name)}${s.default ? `<span class="pill ok">Default</span>` : ""}</b><small>${esc(SD.options.presets[s.captions.preset]?.label || "Custom")} · ${esc(SD.options.framings[s.layout.framing])} · cam ${esc(SD.options.cams[s.layout.cam].toLowerCase())}</small></div></button>`;
+  main.innerHTML = `<div class="titlerow"><div><h1>Styles</h1><p class="sub">How your clips look: the captions, the heading on top and the layout. The default is used for every clip unless a streamer or a video picks another one.</p></div>
+    <button class="btn primary" id="snew">New style</button></div>
+  ${mine.length ? `<h2 class="railh">Your styles</h2><div class="stylegrid" style="margin-bottom:28px">${mine.map(card).join("")}</div>` : ""}
+  <h2 class="railh">Templates</h2><p class="sub" style="margin:-4px 0 14px">Open one to try it on your video. Saving makes it your own copy.</p>
+  <div class="stylegrid">${tpl.map(card).join("")}</div>`;
+  main.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { location.hash = `#styles/${b.dataset.open}`; });
+  $("#snew").onclick = e => act(e.currentTarget, async () => { const s = await api(`/api/styles/${SD.default}/copy`, {method: "POST"}); await styleData(true); location.hash = `#styles/${s.id}`; }, "New style made from your default");
+}
+
+function styleEditor(id) {
+  const base = SD.styles.find(s => s.id === id);
+  if (!base) { main.innerHTML = `<div class="empty"><b>That style is gone</b><a href="#styles">Back to styles</a></div>`; return; }
+  if (!ED || ED.id !== id) ED = {id, template: base.template, st: JSON.parse(JSON.stringify(base)), tab: ED?.tab || "captions", dirty: false};
+  const st = ED.st;
+  main.innerHTML = `<div class="titlerow"><div><a href="#styles" class="faint" style="text-decoration:none;font-size:13px">‹ Styles</a>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px"><input class="sname" id="sname" value="${esc(st.name)}" aria-label="Style name" maxlength="40">${ED.template ? `<span class="pill">Template</span>` : ""}${base.default ? `<span class="pill ok">Default</span>` : ""}</div>
+      <p class="sub">How your clips look. ${ED.template ? "This is a template: saving makes your own copy." : ""}</p></div>
+    <div class="acts">${!ED.template ? `<button class="btn ghost sm" id="sdel">Delete</button>` : ""}${!base.default ? `<button class="btn ghost sm" id="sdef">Make default</button>` : ""}
+      <button class="btn" id="sprev">Preview video</button><button class="btn primary" id="ssave">${ED.template ? "Save as my style" : "Save changes"}</button></div></div>
+  <div class="seditor"><div class="stage"><div id="phone"></div><video id="pvid" controls playsinline hidden></video>
+      <p class="hint" id="stagehint" style="margin:0">Drag the captions or the heading to move them${st.layout.cam === "corner" ? ", and the cam box to place it" : ""}.</p></div>
+    <div><div class="stabs" role="tablist">${[["captions", "Captions"], ["heading", "Heading"], ["layout", "Layout"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${ED.tab === k}">${l}</button>`).join("")}</div><div id="spanel"></div></div></div>`;
+  drawPhone(); drawPanel();
+  main.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ED.tab = b.dataset.tab; main.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b)); drawPanel(); });
+  $("#sname").oninput = e => { st.name = e.target.value; ED.dirty = true; };
+  $("#ssave").onclick = e => act(e.currentTarget, async () => {
+    const saved = ED.template ? await api("/api/styles", {method: "POST", body: st}) : await api(`/api/styles/${id}`, {method: "PATCH", body: st});
+    await styleData(true); ED = null; refreshPickers();
+    if (saved.id !== id) location.hash = `#styles/${saved.id}`; else viewStyles();
+  }, "Saved. New clips use it.");
+  $("#sprev").onclick = e => act(e.currentTarget, async () => {
+    const r = await api("/api/styles/preview", {method: "POST", body: st});
+    const v = $("#pvid"); v.src = r.url; v.hidden = false; $("#phone").hidden = true;
+    $("#stagehint").innerHTML = `This is your newest clip in this style. <a href="#" id="backstill">Back to the editor</a>`;
+    $("#backstill").onclick = ev => { ev.preventDefault(); v.pause(); v.hidden = true; $("#phone").hidden = false; $("#stagehint").textContent = "Drag the captions or the heading to move them."; };
+    v.play().catch(() => {});
+  });
+  if ($("#sdef")) $("#sdef").onclick = e => act(e.currentTarget, async () => { if (ED.dirty && !ED.template) await api(`/api/styles/${id}`, {method: "PATCH", body: st}); await api(`/api/styles/${id}/default`, {method: "POST"}); await styleData(true); ED = null; refreshPickers(); viewStyles(); }, "Default style set");
+  if ($("#sdel")) $("#sdel").onclick = e => act(e.currentTarget, async () => { await api(`/api/styles/${id}`, {method: "DELETE"}); await styleData(true); ED = null; refreshPickers(); location.hash = "#styles"; }, "Style deleted");
+}
+function changed(redrawPanel = false) { ED.dirty = true; drawPhone(); if (redrawPanel) drawPanel(); }
+function drawPhone() {
+  const box = $("#phone"); if (!box) return;
+  box.innerHTML = phoneHTML(ED.st, SAMPLE, true);
+  const ph = box.querySelector(".phone");
+  ph.querySelectorAll("[data-drag]").forEach(el => el.onpointerdown = e => {
+    if (e.button !== 0) return; e.preventDefault(); el.setPointerCapture(e.pointerId);
+    const r = ph.getBoundingClientRect(), kind = el.dataset.drag, L = ED.st.layout;
+    const start = {x: e.clientX, y: e.clientY, cx: L.corner.x, cy: L.corner.y};
+    el.onpointermove = m => {
+      if (kind === "corner") {
+        L.corner.x = Math.round(Math.min(0.9, Math.max(0, start.cx + (m.clientX - start.x) / r.width)) * 1000) / 1000;
+        L.corner.y = Math.round(Math.min(0.9, Math.max(0, start.cy + (m.clientY - start.y) / r.height)) * 1000) / 1000;
+        const o = phonePlan(ED.st, SAMPLE).cam.out; el.style.left = pc(o[0], 1080); el.style.top = pc(o[1], 1920);
+      } else {
+        const y = Math.min(0.92, Math.max(0.08, (m.clientY - r.top) / r.height));
+        ED.st[kind].y = Math.round(y * 1000) / 1000; el.style.top = `${(y * 100).toFixed(2)}%`;
+      }
+    };
+    el.onpointerup = () => { el.onpointermove = null; ED.dirty = true; drawPhone(); if (ED.tab !== "layout" || kind === "corner") drawPanel(); };
+  });
+}
+const tog = (key, label, on, hint = "") => `<div class="swrow"><div><b>${label}</b>${hint ? `<p>${hint}</p>` : ""}</div><span class="tog"><input type="checkbox" data-tog="${key}" aria-label="${label}" ${on ? "checked" : ""}><span></span></span></div>`;
+const slider = (key, label, min, max, val, unit = "") => `<div class="srow"><label for="sl-${key.replace(".", "-")}">${label}</label><input type="range" id="sl-${key.replace(".", "-")}" data-sl="${key}" min="${min}" max="${max}" step="1" value="${val}"><output>${val}${unit}</output></div>`;
+const chipset = (key, opts, cur, cls = "") => `<div class="chips">${Object.entries(opts).map(([k, l]) => `<button type="button" class="chip ${cls}" data-pick="${key}" data-v="${esc(k)}" aria-pressed="${String(cur) === String(k)}" ${cls === "font" ? `style="font-family:${ff(k)}"` : ""}>${esc(l)}</button>`).join("")}</div>`;
+function getK(key) { return key.split(".").reduce((o, k) => o[k], ED.st); }
+function setK(key, v) { const ks = key.split("."), last = ks.pop(); ks.reduce((o, k) => o[k], ED.st)[last] = v; }
+function drawPanel() {
+  const p = $("#spanel"); if (!p) return;
+  const st = ED.st, cs = st.captions, hs = st.heading, L = st.layout, O = SD.options;
+  const fonts = Object.fromEntries(O.fonts.map(f => [f, f]));
+  if (ED.tab === "captions") {
+    const tile = (k, v) => { const sz = Math.max(12, Math.min(19, fontPx(v.font, v.size).css * 0.15));
+      return `<button type="button" class="tilebtn" data-preset="${k}" aria-pressed="${cs.preset === k}"><div class="sw"><span style="font:${sz.toFixed(1)}px/1 ${ff(v.font)};${v.box === "line" ? `background:${v.box_color};padding:3px 6px;border-radius:5px;` : ""}color:${v.text};-webkit-text-stroke:${(v.outline / 100 * 2.2).toFixed(1)}px #000">${v.words > 1 ? (v.upper ? "HE " : "he ") : ""}<span style="color:${v.lit};${v.box === "word" ? `background:${v.box_color};padding:0 3px;border-radius:4px;` : ""}">${v.upper ? "DID" : "did"}</span>${v.words > 2 ? (v.upper ? " IT" : " it") : ""}</span></div>${esc(v.label)}</button>`; };
+    p.innerHTML = `<div class="sgroup">${tog("captions.show", "Show captions", cs.show, "Word by word, the word being said lit up.")}</div>
+      <div class="sgroup"><h3>Presets</h3><div class="tiles">${Object.entries(O.presets).map(([k, v]) => tile(k, v)).join("")}</div></div>
+      <div class="sgroup"><h3>Animation</h3>${chipset("captions.anim", O.anims, cs.anim)}</div>
+      <div class="sgroup"><h3>Font</h3>${chipset("captions.font", fonts, cs.font, "font")}<p class="hint">Hindi and Urdu captions use a font made for their script automatically.</p></div>
+      <div class="sgroup"><h3>Colours</h3><div class="colors">${[["captions.text", "Text"], ["captions.lit", "Word being said"], ["captions.key", "Key words"], ["captions.box_color", "Background behind the words"]].map(([k, l]) => `<label><input type="color" data-col="${k}" value="${getK(k).toLowerCase()}">${l}</label>`).join("")}</div>
+        <div style="margin-top:10px">${chipset("captions.box", O.boxes, cs.box)}</div><p class="hint">Key words are numbers, shouts and hype words (insane, no way, bhai…).</p></div>
+      <div class="sgroup"><h3>Size and shape</h3>${slider("captions.size", "Size", 40, 180, cs.size, "%")}${slider("captions.outline", "Outline", 0, 250, cs.outline, "%")}${slider("captions.shadow", "Shadow", 0, 250, cs.shadow, "%")}${slider("captions.words", "Words at a time", 1, 5, cs.words)}
+        ${tog("captions.upper", "Capital letters", cs.upper)}
+        <div class="swrow"><div><b>Position</b><p>${cs.y == null ? "Decided per clip, and always off faces." : `Moved by you (${Math.round(cs.y * 100)}% down). Still moves off a face if one is there.`}</p></div>${cs.y == null ? "" : `<button class="btn ghost sm" data-reset="captions">Automatic</button>`}</div></div>`;
+  } else if (ED.tab === "heading") {
+    const look = (k, l) => { const [ink, box, outl] = HEADLOOK[k]; return `<button type="button" class="tilebtn" data-pick="heading.look" data-v="${k}" aria-pressed="${hs.look === k}" data-redraw="1"><div class="sw"><span style="font:15px/1 ${ff(hs.font)};color:${ink};${box ? `background:${box};padding:5px 8px;border-radius:${k === "banner" ? 0 : 6}px;` : ""}-webkit-text-stroke:${outl * 2}px #000;${k === "comic" ? "transform:rotate(-3deg);" : ""}">He did it</span></div>${esc(l)}</button>`; };
+    p.innerHTML = `<div class="sgroup">${tog("heading.show", "Show the heading", hs.show, "The clip's hook, on top. The AI writes it; you can change it on each clip.")}</div>
+      <div class="sgroup"><h3>Look</h3><div class="tiles">${Object.entries(O.heads).map(([k, l]) => look(k, l)).join("")}</div></div>
+      <div class="sgroup"><h3>Font</h3>${chipset("heading.font", fonts, hs.font, "font")}</div>
+      <div class="sgroup"><h3>Size and timing</h3>${slider("heading.size", "Size", 40, 160, hs.size, "%")}${tog("heading.upper", "Capital letters", hs.upper)}${tog("heading.whole", "Keep it on screen the whole clip", hs.whole, "Off: it shows for the first two or three seconds.")}
+        <div class="swrow"><div><b>Position</b><p>${hs.y == null ? "Decided per clip, and always off faces." : `Moved by you (${Math.round(hs.y * 100)}% down).`}</p></div>${hs.y == null ? "" : `<button class="btn ghost sm" data-reset="heading">Automatic</button>`}</div></div>`;
+  } else {
+    const fr = (k, l, pic) => `<button type="button" class="tilebtn" data-pick="layout.framing" data-v="${k}" aria-pressed="${L.framing === k}"><div class="sw" style="background:#0a0a0a">${pic}</div>${esc(l)}</button>`;
+    const mini = inner => `<div style="width:30px;height:52px;border-radius:5px;background:#1d1d1d;position:relative;overflow:hidden">${inner}</div>`;
+    const noCams = SAMPLE?.clip_id && !(SAMPLE.cams || []).length && L.cam_find !== "draw";
+    p.innerHTML = `<div class="sgroup"><h3>Video</h3><div class="tiles">
+        ${fr("smart", "Smart", mini(`<i style="position:absolute;inset:0;background:linear-gradient(160deg,#5c7a3a,#2a3a1e)"></i><i style="position:absolute;left:9px;top:12px;width:12px;height:12px;border-radius:50%;background:#e8c9a6"></i>`))}
+        ${fr("blur", "Full + blur", mini(`<i style="position:absolute;inset:0;background:#2d3a22;filter:blur(2px)"></i><i style="position:absolute;left:0;right:0;top:18px;height:16px;background:linear-gradient(90deg,#5c7a3a,#8aa65a)"></i>`))}
+        ${fr("zoom", "Zoomed in", mini(`<i style="position:absolute;inset:0;background:#2d3a22"></i><i style="position:absolute;left:0;right:0;top:11px;height:30px;background:linear-gradient(90deg,#5c7a3a,#8aa65a)"></i>`))}
+        ${fr("fill", "Fill the screen", mini(`<i style="position:absolute;inset:0;background:linear-gradient(90deg,#5c7a3a,#8aa65a)"></i>`))}</div>
+        <p class="hint">Smart follows faces and picks the layout per clip. A streamer's own layout setting still wins.</p></div>
+      <div class="sgroup"><h3>Streamer cam</h3>${chipset("layout.cam", O.cams, L.cam)}
+        ${L.cam === "corner" ? `<div style="margin-top:12px">${slider("layout.corner.w", "Cam size", 20, 70, Math.round(L.corner.w * 100), "%")}${slider("layout.round", "Rounded corners", 0, 80, L.round)}${slider("layout.border", "Border", 0, 16, L.border)}<div class="colors" style="margin-top:8px"><label><input type="color" data-col="layout.border_color" value="${L.border_color.toLowerCase()}">Border colour</label></div><p class="hint">Drag the cam box in the preview to place it.</p></div>` : ""}
+        ${noCams && L.cam !== "off" ? `<p class="hint">Your newest clip has no cam the AI could find. Draw it below to see it here.</p>` : ""}</div>
+      ${L.cam !== "off" ? `<div class="sgroup"><h3>Where's the cam in the stream?</h3>${chipset("layout.cam_find", {ai: "AI picks it", draw: "Draw it"}, L.cam_find)}
+        <p class="hint">${L.cam_find === "ai" ? "The AI finds each streamer's own cam on their stream." : "Drag a box around the cam. Every clip uses this spot, so it fits streamers who keep their cam in one place."}</p>
+        <div class="drawbox" id="dcam"></div></div>` : ""}
+      <div class="sgroup"><h3>Part of the video</h3>${chipset("layout.partmode", {all: "All of it", pick: "Pick a part"}, L.part ? "pick" : "all")}
+        <p class="hint">Zoomed-in stream, or only one part matters? Draw the part to show. The box is what the clip shows.</p>${L.part ? `<div class="drawbox" id="dpart"></div>` : ""}</div>`;
+    if ($("#dcam")) drawRect($("#dcam"), L.cam_find === "draw" ? L.cam_box : null, r => { L.cam_box = r; L.cam_find = "draw"; changed(); }, L.cam_find === "draw" ? "Cam" : null,
+      L.cam_find === "ai" ? (SAMPLE?.cams || []) : [], L.cam_find === "draw");
+    if ($("#dpart")) drawRect($("#dpart"), L.part, r => { L.part = r; changed(); }, "Video", [], true);
+  }
+  p.querySelectorAll("[data-tog]").forEach(i => i.onchange = () => { setK(i.dataset.tog, i.checked); changed(); });
+  p.querySelectorAll("[data-sl]").forEach(i => i.oninput = () => { const k = i.dataset.sl; setK(k, k === "layout.corner.w" ? +i.value / 100 : +i.value); i.nextElementSibling.textContent = i.value + (i.nextElementSibling.textContent.endsWith("%") ? "%" : ""); changed(); });
+  p.querySelectorAll("[data-col]").forEach(i => i.oninput = () => { setK(i.dataset.col, i.value.toUpperCase()); changed(); });
+  p.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => {
+    const k = b.dataset.pick, v = b.dataset.v;
+    if (k === "layout.partmode") { L.part = v === "pick" ? (L.part || [0.15, 0.08, 0.7, 0.84]) : null; }
+    else if (k === "layout.cam_find" && v === "draw" && !L.cam_box) { L.cam_box = (SAMPLE?.cams || [])[0] || [0.02, 0.62, 0.25, 0.33]; L.cam_find = "draw"; }
+    else setK(k, v);
+    changed(true);
+  });
+  p.querySelectorAll("[data-preset]").forEach(b => b.onclick = () => { const v = O.presets[b.dataset.preset]; Object.assign(cs, Object.fromEntries(Object.entries(v).filter(([k]) => k !== "label")), {preset: b.dataset.preset}); changed(true); });
+  p.querySelectorAll("[data-reset]").forEach(b => b.onclick = () => { st[b.dataset.reset].y = null; changed(true); });
+}
+/* a box drawn on a still of the original video: drag inside to move, the corner to resize, outside to draw anew */
+function drawRect(box, rect, onChange, label, aiRects = [], editable = true) {
+  const W = SAMPLE?.w || 1920, H = SAMPLE?.h || 1080;
+  box.style.aspectRatio = `${W}/${H}`;
+  box.innerHTML = (SAMPLE?.clip_id ? `<img src="/media/style-frame.jpg?at=${SAMPLE.at}&c=${SAMPLE.clip_id}" alt="A frame of your newest clip's video" draggable="false">` : `<div class="ph-ph" style="position:absolute;inset:0;display:grid;place-items:center;color:#555;font-size:12px">Make a clip to see your video here</div>`)
+    + aiRects.map(r => `<div class="rect ai" style="left:${r[0] * 100}%;top:${r[1] * 100}%;width:${r[2] * 100}%;height:${r[3] * 100}%"><span>Found by AI</span></div>`).join("")
+    + (rect ? `<div class="rect" id="r-${box.id}" style="left:${rect[0] * 100}%;top:${rect[1] * 100}%;width:${rect[2] * 100}%;height:${rect[3] * 100}%"><span>${esc(label || "")}</span></div>` : "");
+  if (!editable) { box.style.cursor = "default"; return; }
+  let cur = rect ? [...rect] : null;
+  const el = () => box.querySelector(".rect:not(.ai)");
+  const paint = () => { let e = el(); if (!e) { box.insertAdjacentHTML("beforeend", `<div class="rect"><span>${esc(label || "")}</span></div>`); e = el(); }
+    Object.assign(e.style, {left: cur[0] * 100 + "%", top: cur[1] * 100 + "%", width: cur[2] * 100 + "%", height: cur[3] * 100 + "%"}); };
+  box.onpointerdown = e => {
+    if (e.button !== 0) return; e.preventDefault(); box.setPointerCapture(e.pointerId);
+    const r = box.getBoundingClientRect(), px = (e.clientX - r.left) / r.width, py = (e.clientY - r.top) / r.height;
+    const clamp = v => Math.min(1, Math.max(0, v));
+    let mode = "new", s0 = cur ? [...cur] : null;
+    if (cur) { const [x, y, w, h] = cur, nearCorner = Math.abs(px - (x + w)) * r.width < 14 && Math.abs(py - (y + h)) * r.height < 14;
+      if (nearCorner) mode = "size"; else if (px >= x && px <= x + w && py >= y && py <= y + h) mode = "move"; }
+    box.onpointermove = m => {
+      const mx = clamp((m.clientX - r.left) / r.width), my = clamp((m.clientY - r.top) / r.height);
+      if (mode === "new") cur = [Math.min(px, mx), Math.min(py, my), Math.abs(mx - px), Math.abs(my - py)];
+      else if (mode === "move") cur = [Math.min(1 - s0[2], Math.max(0, s0[0] + mx - px)), Math.min(1 - s0[3], Math.max(0, s0[1] + my - py)), s0[2], s0[3]];
+      else cur = [s0[0], s0[1], Math.max(0.04, mx - s0[0]), Math.max(0.04, my - s0[1])];
+      paint();
+    };
+    box.onpointerup = () => { box.onpointermove = null; if (cur && cur[2] > 0.03 && cur[3] > 0.03) onChange(cur.map(v => Math.round(v * 10000) / 10000)); };
+  };
+}
+
+/* ---------------- clip options (next to Make clips) ---------------- */
+const OPT_KEY = "bcut.clipopts", OPT_USUAL = {streamer_id: "", style_id: "", captions: "auto", count: 6, min_len: 15, max_len: 60, from: "", to: ""};
+function readOpts() { try { return {...OPT_USUAL, ...JSON.parse(localStorage.getItem(OPT_KEY) || "{}")}; } catch (e) { return {...OPT_USUAL}; } }
+function saveOpts(o) { try { localStorage.setItem(OPT_KEY, JSON.stringify(o)); } catch (e) {} }
+function optsFromForm() {
+  const n = id => $(id).value.trim();
+  return {streamer_id: n("#o-streamer"), style_id: n("#o-style"), captions: n("#o-lang") || "auto", count: +n("#o-count") || 6,
+    min_len: +n("#o-min") || 15, max_len: +n("#o-max") || 60, from: n("#o-from"), to: n("#o-to")};
+}
+function clipOptions() {            // what goes with a link or an upload
+  const o = readOpts(), m = v => v === "" || isNaN(+v) ? null : Math.round(+v * 60);
+  return {streamer_id: o.streamer_id || null, style_id: o.style_id, captions: o.captions, count: o.count, min_len: o.min_len, max_len: o.max_len, from: m(o.from), to: m(o.to)};
+}
+async function refreshPickers() {
+  try {
+    const [sd, ss] = await Promise.all([styleData(), api("/api/streamers")]);
+    const o = readOpts();
+    $("#o-style").innerHTML = `<option value="">Your default · ${esc(sd.styles.find(s => s.default)?.name || "Default")}</option>` + sd.styles.map(s => `<option value="${s.id}">${esc(s.name)}${s.template ? " (template)" : ""}</option>`).join("");
+    $("#o-lang").innerHTML = Object.entries(sd.languages).map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("");
+    $("#o-streamer").innerHTML = `<option value="">No streamer</option>` + ss.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+    for (const [k, id] of [["streamer_id", "#o-streamer"], ["style_id", "#o-style"], ["captions", "#o-lang"], ["count", "#o-count"], ["min_len", "#o-min"], ["max_len", "#o-max"], ["from", "#o-from"], ["to", "#o-to"]]) $(id).value = o[k] ?? "";
+    if ($("#o-style").value !== (o.style_id || "")) $("#o-style").value = "";
+    markOpts();
+  } catch (e) {}
+}
+function markOpts() { const o = readOpts(), on = Object.keys(OPT_USUAL).some(k => String(o[k] ?? "") !== String(OPT_USUAL[k]));
+  $("#optbtn").style.boxShadow = on ? "inset 0 0 0 2px var(--accent)" : ""; $("#optbtn").title = on ? "Clip options (changed from the usual)" : "Clip options: how many, how long, which part, captions, style"; }
+function openOpts(open) {
+  const p = $("#clipopts"), b = $("#optbtn"), r = b.getBoundingClientRect();
+  if (open) { p.style.left = Math.max(12, Math.min(r.right - p.offsetWidth, window.innerWidth - p.offsetWidth - 12)) + "px"; p.style.top = (r.bottom + 10) + "px"; p.style.transformOrigin = "top right"; p.removeAttribute("data-hide"); refreshPickers(); }
+  else p.setAttribute("data-hide", "");
+  b.setAttribute("aria-expanded", open);
+}
+$("#optbtn").onclick = () => openOpts($("#clipopts").hasAttribute("data-hide"));
+$("#o-done").onclick = () => openOpts(false);
+$("#o-reset").onclick = () => { saveOpts({}); refreshPickers(); toast("Back to the usual options"); };
+$("#clipopts").addEventListener("change", () => { saveOpts(optsFromForm()); markOpts(); });
+$("#clipopts").addEventListener("input", e => { if (e.target.matches("#o-count,#o-min,#o-max,#o-from,#o-to")) { saveOpts(optsFromForm()); markOpts(); } });
+$("#clipopts").querySelectorAll("[data-step]").forEach(b => b.onclick = () => { const [id, d] = b.dataset.step.split(":"), i = $("#" + id);
+  const lim = {"o-count": [1, 30], "o-min": [5, 170], "o-max": [8, 180]}[id]; i.value = Math.min(lim[1], Math.max(lim[0], (+i.value || 0) + +d)); saveOpts(optsFromForm()); markOpts(); });
+document.addEventListener("pointerdown", e => { if (!$("#clipopts").hasAttribute("data-hide") && !e.target.closest("#clipopts,#optbtn")) openOpts(false); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#clipopts").hasAttribute("data-hide")) { openOpts(false); $("#optbtn").focus(); } });
+
+const VIEWS = {today: viewToday, inbox: viewInbox, streamers: viewStreamers, styles: viewStyles, campaigns: viewCampaigns, queue: viewQueue, accounts: viewAccounts, settings: viewSettings};
 
 /* ---------------- top bar: clip a link / upload ---------------- */
 async function submitLink(url) {
-  try { await api("/api/jobs", {method: "POST", body: {url, rights: $("#cliprights")?.value || "unknown", captions: $("#clipcaps").value, campaign_id: $("#clipcamp").value}}); toast("Added. It shows under Working on."); $("#clipurl").value = ""; if (S.view === "today") viewToday(); else location.hash = "#today"; }
+  try { await api("/api/jobs", {method: "POST", body: {url, rights: $("#cliprights")?.value || "unknown", campaign_id: $("#clipcamp").value, ...clipOptions()}}); toast("Added. It shows under Working on."); $("#clipurl").value = ""; openOpts(false); if (S.view === "today") viewToday(); else location.hash = "#today"; }
   catch (e) { toast(e.message, true); }
 }
 $("#clipform").onsubmit = e => { e.preventDefault(); submitLink($("#clipurl").value.trim()); };
 $("#clipform label[for=upfile]").onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#upfile").click(); } };
 $("#upfile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  const fd = new FormData(); fd.append("file", f); toast(`Uploading ${f.name}…`);
+  const fd = new FormData(); fd.append("file", f); fd.append("options", JSON.stringify(clipOptions())); toast(`Uploading ${f.name}…`);
   try { await api("/api/upload", {method: "POST", body: fd}); toast("Uploaded. Clipping it now."); location.hash = "#today"; viewToday(); } catch (err) { toast(err.message, true); }
   e.target.value = "";
 };
@@ -782,6 +1178,7 @@ async function loadCampaignPicker() {
     sel.value = cs.some(c => c.id === cur) ? cur : ""; sel.hidden = !cs.length; } catch (e) {}
 }
 loadCampaignPicker();
+refreshPickers();
 route();
 </script>
 </body>

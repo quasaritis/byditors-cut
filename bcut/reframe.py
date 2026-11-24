@@ -499,13 +499,45 @@ def _speaker_plan(ts, imgs, people, voiced, cuts, cw, force=False) -> dict | Non
 
 # ── the plan ─────────────────────────────────────────────────────────────────────────────────────────────
 
+def _layout_opts(opts: dict | None) -> dict:
+    """The layout part of a style (bcut.styles), with the defaults filled in."""
+    o = dict(opts or {})
+    o.setdefault("framing", "smart")
+    o.setdefault("cam", "top")
+    o.setdefault("cam_find", "ai")
+    return o
+
+
+def _part_px(part, src_w: int, src_h: int) -> list[int] | None:
+    """The part of the video to show ([x, y, w, h] in 0..1) as even source pixels, or None for all of it."""
+    if not part or len(part) != 4:
+        return None
+    x, y, w, h = (float(v) for v in part)
+    if w <= 0.02 or h <= 0.02 or (w > 0.98 and h > 0.98):
+        return None
+    W, H = _even(max(16, w * src_w)), _even(max(16, h * src_h))
+    W, H = min(W, src_w - src_w % 2), min(H, src_h - src_h % 2)
+    X, Y = min(max(0, _even(x * src_w)), src_w - W), min(max(0, _even(y * src_h)), src_h - H)
+    return [X, Y, W, H]
+
+
+def _eff(plan: dict, src_w: int, src_h: int) -> tuple[int, int]:
+    """The picture the layout works on: the picked part of the video (when one is picked), else all of it."""
+    p = plan.get("part")
+    if p and plan.get("mode") != "split":
+        return int(p[2]), int(p[3])
+    return src_w, src_h
+
+
 def analyse(src: Path, start: float, end: float, src_w: int, src_h: int, cuts: list[float] | None = None,
-            want: str = "auto") -> dict:
+            want: str = "auto", opts: dict | None = None) -> dict:
     """Look at the clip and return a plan the renderer follows: the layout, how it moves, and where the
-    faces end up on the vertical screen (so captions can stay off them)."""
+    faces end up on the vertical screen (so captions can stay off them). `opts` is a style's layout settings
+    (framing, where the cam goes, a drawn cam box, the part of the video to show)."""
     want = ALIASES.get(want or "auto", want or "auto")
     if want not in LAYOUTS:
         want = "auto"
+    o = _layout_opts(opts)
     if src_w == 0 or src_h == 0:
         return {"mode": "wide"}
     dur = end - start
@@ -518,9 +550,42 @@ def analyse(src: Path, start: float, end: float, src_w: int, src_h: int, cuts: l
     ts = np.array([t - start for t, _ in shots])
     imgs = [img for _, img in shots]
     dets = [_faces(img, det) for img in imgs]
+    part = _part_px(o.get("part"), src_w, src_h)
+    plan = None
     text = textscan.scan(imgs, list(ts))
-    plan = _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text,
-                   voice=lambda: _voice(src, start, end, ts))
+    # a video with its own wide subtitles stays whole (cropping would slice them): no cam split for it
+    subbed = want == "auto" and text.get("captions") and text.get("width", 0) > 0.9 * (src_h * 9 / 16) / src_w
+    if want in ("auto", "split") and o["cam"] != "off" and src_h < src_w * 1.2 and not subbed:
+        drawn = o.get("cam_box") if o.get("cam_find") == "draw" else None
+        if drawn:
+            x, y, w, h = drawn
+            cams = [{"box": (x, y, w, h), "face": (x + w / 2, y + h * 0.45)}]
+        else:
+            cams = find_cams(dets, imgs, force=(want == "split"))
+        if cams or want == "split":
+            cams = cams or [{"box": (0.0, 0.0, 0.3, 0.33), "face": (0.15, 0.15)}]
+            plan = {"mode": "split", "cams": [{"box": [round(v, 4) for v in c["box"]],
+                                               "face": [round(v, 4) for v in c["face"]]} for c in cams]}
+            plan.update(_cam_look(o))
+            if part:
+                plan["part"] = part
+    if plan is None and part:
+        # only this part of the picture counts: look at it as if it were the whole video
+        H0, W0 = imgs[0].shape[:2]
+        k = W0 / src_w
+        x0, y0, w0, h0 = (int(round(v * k)) for v in part)
+        imgs = [img[y0:y0 + h0, x0:x0 + w0] for img in imgs]
+        dets = [_faces(img, det) for img in imgs]
+        eff_w, eff_h = part[2], part[3]
+        text = textscan.scan(imgs, list(ts))
+    else:
+        eff_w, eff_h = src_w, src_h
+    if plan is None:
+        plan = _choose(ts, imgs, dets, start, end, eff_w, eff_h, cuts, want, text,
+                       voice=lambda: _voice(src, start, end, ts), framing=o["framing"],
+                       look_for_cams=False)
+        if part:
+            plan["part"] = part
     plan["faces"] = round(sum(1 for d in dets if d) / len(dets), 2)
     plan["faces_out"] = _project(plan, ts, dets, src_w, src_h)
     # text already in the picture: its own subtitles mean we add none; any text is kept clear of
@@ -528,13 +593,38 @@ def analyse(src: Path, start: float, end: float, src_w: int, src_h: int, cuts: l
     for t, x, y, w, h in text.get("text") or []:
         by_t.setdefault(t, []).append((x, y, w, h))
     plan["text_out"] = _project(plan, list(by_t), list(by_t.values()), src_w, src_h)
+    if plan.get("mode") == "split" and plan.get("cam_pos") == "corner":
+        # the cam box sits on top of the picture: captions and the hook keep clear of it like a face
+        ox, oy, ow, oh = corner_rect(plan, src_w, src_h)
+        b = plan.get("border", 0)
+        plan["text_out"] += [[round(float(t), 2), int(ox - b), int(oy - b), int(ox + ow + b), int(oy + oh + b)]
+                             for t in list(ts) + [float(ts[-1]) + 0.5]]
     plan["burned"] = bool(text.get("captions"))
     return plan
 
 
-def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text=None, voice=None) -> dict:
+def _cam_look(o: dict) -> dict:
+    spot = o.get("cam") if o.get("cam") in ("top", "bottom", "corner") else "top"
+    out = {"cam_pos": spot}
+    if spot == "corner":
+        c = o.get("corner") or {}
+        out.update(corner={"x": float(c.get("x", 0.04)), "y": float(c.get("y", 0.1)), "w": float(c.get("w", 0.42))},
+                   round=int(o.get("round", 28)), border=int(o.get("border", 4)),
+                   border_color=str(o.get("border_color") or "#FFFFFF"),
+                   framing=o.get("framing", "smart"))
+    return out
+
+
+def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text=None, voice=None,
+            framing: str = "smart", look_for_cams: bool = True) -> dict:
     if src_h >= src_w * 1.2:
         return {"mode": "fit"}
+    if want == "auto" and framing in ("blur", "zoom"):
+        # the style asks for the whole picture (on a blurred fill) or a zoomed-in middle
+        return {"mode": "wide" if framing == "blur" else "zoom"}
+    if want == "auto" and framing == "fill":
+        # fill the screen: follow a face when there is one, else the middle
+        want = "face" if sum(1 for d in dets if d) >= 0.15 * max(1, len(dets)) else "center"
     if want in ("center", "wide"):
         return {"mode": want}
     if want == "auto" and (text or {}).get("captions") and (text or {}).get("width", 0) > 0.9 * (src_h * 9 / 16) / src_w:
@@ -544,7 +634,7 @@ def _choose(ts, imgs, dets, start, end, src_w, src_h, cuts, want, text=None, voi
     cw = (src_h * 9 / 16) / src_w            # a full-height 9:16 window, as a share of the width
     rel_cuts = [c - start for c in (cuts or []) if start + 0.3 < c < end - 0.3]
 
-    if want in ("auto", "split"):
+    if want in ("auto", "split") and look_for_cams:
         cams = find_cams(dets, imgs, force=(want == "split"))
         if cams or want == "split":
             cams = cams or [{"box": (0.0, 0.0, 0.3, 0.33), "face": (0.15, 0.15)}]
@@ -638,9 +728,64 @@ def split_geometry(plan: dict, src_w: int, src_h: int) -> dict:
     return {"top": _even(top), "bottom": OUT_H - _even(top)}
 
 
+ZOOM_H = 1350             # "Zoomed in": a 4:5 window of the middle, 1080x1350, over a blurred fill
+
+
+def _cams_merged(plan: dict) -> list[dict]:
+    cams = plan.get("cams") or [{"box": [0, 0, 0.3, 0.33], "face": [0.15, 0.15]}]
+    if len(cams) > 2 or (len(cams) > 1 and plan.get("cam_pos") == "corner"):   # one box around them all
+        x0 = min(c["box"][0] for c in cams)
+        y0 = min(c["box"][1] for c in cams)
+        x1 = max(c["box"][0] + c["box"][2] for c in cams)
+        y1 = max(c["box"][1] + c["box"][3] for c in cams)
+        cams = [{"box": [x0, y0, x1 - x0, y1 - y0],
+                 "face": [float(np.mean([c["face"][0] for c in cams])), float(np.mean([c["face"][1] for c in cams]))]}]
+    return cams
+
+
+def corner_rect(plan: dict, src_w: int, src_h: int) -> tuple[int, int, int, int]:
+    """Where the cam box goes on the screen in the "corner" layout: (x, y, w, h), the cam's own shape."""
+    c = plan.get("corner") or {}
+    cam = _cams_merged(plan)[0]
+    bw, bh = cam["box"][2] * src_w, cam["box"][3] * src_h
+    w = _even(min(0.7, max(0.2, float(c.get("w", 0.42)))) * OUT_W)
+    h = _even(min(0.5 * OUT_H, max(0.12 * OUT_H, w * bh / max(1.0, bw))))
+    b = int(plan.get("border", 0))
+    x = _even(min(OUT_W - w - b, max(b, float(c.get("x", 0.04)) * OUT_W)))
+    y = _even(min(OUT_H - h - b, max(b, float(c.get("y", 0.1)) * OUT_H)))
+    return x, y, w, h
+
+
+def _game_area(plan: dict, src_w: int, src_h: int) -> tuple[float, float, float, float]:
+    p = plan.get("part")
+    return (float(p[0]), float(p[1]), float(p[2]), float(p[3])) if p else (0.0, 0.0, float(src_w), float(src_h))
+
+
+def _game_rect(plan: dict, cams: list[dict], src_w: int, src_h: int, out_w: int, out_h: int):
+    """The gameplay window for an out_w x out_h panel: as much of the middle of the game area as fits, nudged
+    away from the cam."""
+    ax, ay, aw, ah = _game_area(plan, src_w, src_h)
+    gw = min(aw, ah * out_w / out_h)
+    gh = min(ah, gw * out_h / out_w)
+    centre = ax + (aw - gw) / 2
+    gx = centre
+    lim = 0.18 * aw
+    for c in cams:
+        a, b = c["box"][0] * src_w, (c["box"][0] + c["box"][2]) * src_w
+        if a < gx + gw and b > gx:
+            cand = [v for v in (a - gw, b) if ax <= v <= ax + aw - gw and abs(v - centre) <= lim]
+            if cand:
+                gx = min(cand, key=lambda v: abs(v - centre))
+            else:
+                gx = min(max(centre - lim if (a + b) / 2 > ax + aw / 2 else centre + lim, ax), ax + aw - gw)
+    return (gx, ay + (ah - gh) / 2, gw, gh)
+
+
 def panels(plan: dict, src_w: int, src_h: int, t: float = 0.0) -> list[dict]:
-    """[{"src": (x, y, w, h) in source pixels, "out": (x, y, w, h) on the 1080x1920 screen, "name": ...}]"""
+    """[{"src": (x, y, w, h) in source pixels, "out": (x, y, w, h) on the 1080x1920 screen, "name": ...}]
+    With a picked part of the video (and no cam split), source pixels count from that part's corner."""
     mode = ALIASES.get(plan.get("mode", "wide"), plan.get("mode", "wide"))
+    src_w, src_h = _eff(plan, src_w, src_h)
     if mode == "fit":
         s = max(OUT_W / src_w, OUT_H / src_h)
         w, h = OUT_W / s, OUT_H / s
@@ -651,6 +796,11 @@ def panels(plan: dict, src_w: int, src_h: int, t: float = 0.0) -> list[dict]:
         if mode in ("face", "speaker") and plan.get("track"):
             x = min(src_w - cw, max(0.0, _at(plan["track"], t) * src_w - cw / 2))
         return [{"src": (x, 0, cw, src_h), "out": (0, 0, OUT_W, OUT_H), "name": "f"}]
+    if mode == "zoom":
+        zw = min(src_w, src_h * OUT_W / ZOOM_H)
+        zh = min(src_h, zw * ZOOM_H / OUT_W)
+        return [{"src": ((src_w - zw) / 2, (src_h - zh) / 2, zw, zh),
+                 "out": (0, (OUT_H - ZOOM_H) // 2 - 60, OUT_W, ZOOM_H), "name": "z"}]
     if mode == "stack":
         half = OUT_H // 2
         out = []
@@ -662,37 +812,43 @@ def panels(plan: dict, src_w: int, src_h: int, t: float = 0.0) -> list[dict]:
             out.append({"src": (x, y, pw, ph), "out": (0, k * half, OUT_W, half), "name": name})
         return out
     if mode == "split":
+        cams = _cams_merged(plan)
+        spot = plan.get("cam_pos") or "top"
+        if spot == "corner":
+            ox, oy, ow, oh = corner_rect(plan, src_w, src_h)
+            c = cams[0]
+            bx, by, bw, bh = c["box"]
+            r = _cover_rect(bx * src_w, by * src_h, bw * src_w, bh * src_h, ow, oh, c["face"][0] * src_w,
+                            c["face"][1] * src_h)
+            if plan.get("framing") in ("blur", "zoom"):
+                ax, ay, aw, ah = _game_area(plan, src_w, src_h)
+                if plan.get("framing") == "blur":
+                    gh = OUT_W * ah / aw
+                    game = {"src": (ax, ay, aw, ah), "out": (0, (OUT_H - gh) / 2 - 60, OUT_W, gh), "name": "g",
+                            "fill": True}
+                else:
+                    zw = min(aw, ah * OUT_W / ZOOM_H)
+                    zh = min(ah, zw * ZOOM_H / OUT_W)
+                    game = {"src": (ax + (aw - zw) / 2, ay + (ah - zh) / 2, zw, zh),
+                            "out": (0, (OUT_H - ZOOM_H) // 2 - 60, OUT_W, ZOOM_H), "name": "g", "fill": True}
+            else:
+                game = {"src": _game_rect(plan, cams, src_w, src_h, OUT_W, OUT_H), "out": (0, 0, OUT_W, OUT_H),
+                        "name": "g"}
+            # the cam first: a face inside it lands on the cam box, not on the game behind it
+            return [{"src": r, "out": (ox, oy, ow, oh), "name": "c0", "overlay": True}, game]
         g = split_geometry(plan, src_w, src_h)
         top, bot = g["top"], g["bottom"]
-        cams = plan.get("cams") or [{"box": [0, 0, 0.3, 0.33], "face": [0.15, 0.15]}]
-        if len(cams) > 2:          # three or more: one box around them all
-            x0 = min(c["box"][0] for c in cams)
-            y0 = min(c["box"][1] for c in cams)
-            x1 = max(c["box"][0] + c["box"][2] for c in cams)
-            y1 = max(c["box"][1] + c["box"][3] for c in cams)
-            cams = [{"box": [x0, y0, x1 - x0, y1 - y0],
-                     "face": [float(np.mean([c["face"][0] for c in cams])), float(np.mean([c["face"][1] for c in cams]))]}]
+        cam_y, game_y = (0, top) if spot != "bottom" else (bot, 0)
         out = []
         tw = OUT_W // len(cams)
         for i, c in enumerate(cams):
             bx, by, bw, bh = c["box"]
             r = _cover_rect(bx * src_w, by * src_h, bw * src_w, bh * src_h, tw, top,
                             c["face"][0] * src_w, c["face"][1] * src_h)
-            out.append({"src": r, "out": (i * tw, 0, tw, top), "name": f"c{i}"})
-        # gameplay: as much of the middle as fits the lower panel, nudged away from the cam
-        gw = min(src_w, src_h * OUT_W / bot)
-        centre = (src_w - gw) / 2
-        gx = centre
-        lim = 0.18 * src_w
-        for c in cams:
-            a, b = c["box"][0] * src_w, (c["box"][0] + c["box"][2]) * src_w
-            if a < gx + gw and b > gx:
-                cand = [v for v in (a - gw, b) if 0 <= v <= src_w - gw and abs(v - centre) <= lim]
-                if cand:
-                    gx = min(cand, key=lambda v: abs(v - centre))
-                else:
-                    gx = min(max(centre - lim if (a + b) / 2 > src_w / 2 else centre + lim, 0), src_w - gw)
-        out.append({"src": (gx, 0, gw, src_h), "out": (0, top, OUT_W, bot), "name": "g"})
+            out.append({"src": r, "out": (i * tw, cam_y, tw, top), "name": f"c{i}"})
+        # gameplay: as much of the middle as fits the other panel, nudged away from the cam
+        out.append({"src": _game_rect(plan, cams, src_w, src_h, OUT_W, bot), "out": (0, game_y, OUT_W, bot),
+                    "name": "g"})
         return out
     # wide
     fg_h = OUT_W * src_h / src_w
@@ -701,6 +857,7 @@ def panels(plan: dict, src_w: int, src_h: int, t: float = 0.0) -> list[dict]:
 
 def _project(plan: dict, ts, dets, src_w: int, src_h: int) -> list[list[int]]:
     """Every face seen, as [t, x0, y0, x1, y1] on the vertical screen."""
+    src_w, src_h = _eff(plan, src_w, src_h)
     out = []
     for t, faces in zip(ts, dets):
         if not faces:
@@ -749,25 +906,92 @@ def _crop(rect, src_w, src_h, name: str = "") -> str:
     return f"crop{'@' + name if name else ''}={w}:{h}:{x}:{y}"
 
 
-def filter_graph(plan: dict, src_w: int, src_h: int, has_cmds: bool = False) -> str:
-    """The ffmpeg -filter_complex that produces [v] at 1080x1920."""
+BLUR_BG = "boxblur=28:3,eq=brightness=-0.12"
+
+
+def _hexc(c: str) -> str:
+    c = str(c or "#FFFFFF").lstrip("#")
+    return "0x" + (c if len(c) == 6 and all(ch in "0123456789abcdefABCDEF" for ch in c) else "FFFFFF")
+
+
+def needs_mask(plan: dict) -> bool:
+    """The corner cam box with rounded corners needs a mask picture as a second input."""
+    return plan.get("mode") == "split" and plan.get("cam_pos") == "corner" and int(plan.get("round", 0)) > 0
+
+
+def corner_mask(plan: dict, src_w: int, src_h: int, path: Path) -> Path:
+    """A white rounded rectangle (the cam box plus its border) on black: the cam box's alpha mask."""
+    import cv2
+
+    _, _, w, h = corner_rect(plan, src_w, src_h)
+    b = int(plan.get("border", 0))
+    W, H = w + 2 * b, h + 2 * b
+    r = max(0, min(int(plan.get("round", 0)) + b, W // 2, H // 2))
+    k = 4                                           # drawn 4x bigger, then shrunk: smooth edges
+    m = np.zeros((H * k, W * k), np.uint8)
+    R = r * k
+    cv2.rectangle(m, (R, 0), (W * k - R - 1, H * k - 1), 255, -1)
+    cv2.rectangle(m, (0, R), (W * k - 1, H * k - R - 1), 255, -1)
+    for cx, cy in ((R, R), (W * k - R - 1, R), (R, H * k - R - 1), (W * k - R - 1, H * k - R - 1)):
+        cv2.circle(m, (cx, cy), R, 255, -1, lineType=cv2.LINE_AA)
+    cv2.imwrite(str(path), cv2.resize(m, (W, H), interpolation=cv2.INTER_AREA))
+    return path
+
+
+def filter_graph(plan: dict, src_w: int, src_h: int, has_cmds: bool = False, mask_input: int | None = None) -> str:
+    """The ffmpeg -filter_complex that produces [v] at 1080x1920. `mask_input` is the input number of the
+    corner mask picture (see needs_mask)."""
     mode = ALIASES.get(plan.get("mode", "wide"), plan.get("mode", "wide"))
     send = "sendcmd=f=moves.txt," if has_cmds else ""
     ps = panels(plan, src_w, src_h, 0.0)
+    part = plan.get("part")
+    # a picked part of the video (no cam split): everything below works on that part only
+    pre = f"[0:v]crop={int(part[2])}:{int(part[3])}:{int(part[0])}:{int(part[1])}," if part and mode != "split" else "[0:v]"
+    ew, eh = _eff(plan, src_w, src_h)
     if mode == "fit":
-        return (f"[0:v]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+        return (f"{pre}scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
                 f"crop={OUT_W}:{OUT_H},setsar=1[v]")
     if mode in ("face", "center", "speaker"):
-        return f"[0:v]{send}{_crop(ps[0]['src'], src_w, src_h, 'f')},scale={OUT_W}:{OUT_H},setsar=1[v]"
+        return f"{pre}{send}{_crop(ps[0]['src'], ew, eh, 'f')},scale={OUT_W}:{OUT_H},setsar=1[v]"
     if mode == "wide":
-        return (f"[0:v]split=2[a][b];[a]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
-                f"crop={OUT_W}:{OUT_H},boxblur=28:3,eq=brightness=-0.12[bg];"
+        return (f"{pre}split=2[a][b];[a]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+                f"crop={OUT_W}:{OUT_H},{BLUR_BG}[bg];"
                 f"[b]scale={OUT_W}:-2[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2-60,setsar=1[v]")
+    if mode == "zoom":
+        ox, oy, ow, oh = ps[0]["out"]
+        return (f"{pre}split=2[a][b];[a]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,"
+                f"crop={OUT_W}:{OUT_H},{BLUR_BG}[bg];"
+                f"[b]{_crop(ps[0]['src'], ew, eh)},scale={int(ow)}:{int(oh)}[fg];[bg][fg]overlay={int(ox)}:{int(oy)},"
+                f"setsar=1[v]")
     names = [p["name"] for p in ps]
-    chains = [f"[0:v]{send}split={len(ps)}" + "".join(f"[i{n}]" for n in names)]
+    if mode == "split" and plan.get("cam_pos") == "corner":
+        cam, game = ps[0], ps[1]
+        ox, oy, ow, oh = (int(v) for v in cam["out"])
+        b = int(plan.get("border", 0))
+        chains = [f"[0:v]split=2[ic][ig]"]
+        if game.get("fill"):
+            gx, gy, gw, gh = game["out"]
+            chains.append(f"[ig]{_crop(game['src'], src_w, src_h)},split=2[ga][gb];"
+                          f"[ga]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=increase,crop={OUT_W}:{OUT_H},"
+                          f"{BLUR_BG}[gbg];[gb]scale={OUT_W}:{_even(gh)}[gfg];"
+                          f"[gbg][gfg]overlay=0:{int(gy)},setsar=1[og]")
+        else:
+            chains.append(f"[ig]{_crop(game['src'], src_w, src_h)},scale={OUT_W}:{OUT_H},setsar=1[og]")
+        cam_chain = f"[ic]{_crop(cam['src'], src_w, src_h)},scale={ow}:{oh},setsar=1"
+        if b:
+            cam_chain += f",pad={ow + 2 * b}:{oh + 2 * b}:{b}:{b}:color={_hexc(plan.get('border_color'))}"
+        if mask_input is not None and needs_mask(plan):
+            chains.append(cam_chain + "[cb]")
+            chains.append(f"[{mask_input}:v]format=gray,scale={ow + 2 * b}:{oh + 2 * b}[mk];"
+                          f"[cb]format=yuva420p[cba];[cba][mk]alphamerge[oc]")
+        else:
+            chains.append(cam_chain + "[oc]")
+        chains.append(f"[og][oc]overlay={ox - b}:{oy - b}:shortest=1,format=yuv420p[v]")
+        return ";".join(chains)
+    chains = [f"{pre}{send}split={len(ps)}" + "".join(f"[i{n}]" for n in names)]
     for p in ps:
         n, (ox, oy, ow, oh) = p["name"], p["out"]
-        chains.append(f"[i{n}]{_crop(p['src'], src_w, src_h, n if mode == 'stack' else '')},"
+        chains.append(f"[i{n}]{_crop(p['src'], src_w if mode == 'split' else ew, src_h if mode == 'split' else eh, n if mode == 'stack' else '')},"
                       f"scale={int(ow)}:{int(oh)},setsar=1[o{n}]")
     if mode == "stack":
         chains.append("[oa][ob]vstack=inputs=2[v]")
@@ -777,7 +1001,7 @@ def filter_graph(plan: dict, src_w: int, src_h: int, has_cmds: bool = False) -> 
             chains.append(f"[o{cams[0]}][o{cams[1]}]hstack=inputs=2[top]")
         else:
             chains.append(f"[o{cams[0]}]null[top]")
-        chains.append("[top][og]vstack=inputs=2[v]")
+        chains.append("[og][top]vstack=inputs=2[v]" if plan.get("cam_pos") == "bottom" else "[top][og]vstack=inputs=2[v]")
     return ";".join(chains)
 
 
@@ -786,13 +1010,21 @@ def text_spots(plan: dict, src_w: int = 1920, src_h: int = 1080) -> dict:
     uncovered (their buttons and caption text cover roughly the bottom 22% and the top 10%). The renderer
     moves them off any face that is there at the time."""
     mode = ALIASES.get(plan.get("mode"), plan.get("mode"))
+    if mode == "split" and plan.get("cam_pos") == "corner":
+        return {"cap": 1300, "hook": 330}
     if mode == "split":
         top = split_geometry(plan, src_w, src_h)["top"]
+        if plan.get("cam_pos") == "bottom":
+            return {"cap": OUT_H - top, "hook": 330}
         return {"cap": top, "hook": top + 300}
     if mode == "stack":
         return {"cap": OUT_H // 2, "hook": 300}
+    if mode == "zoom":
+        y0 = (OUT_H - ZOOM_H) // 2 - 60
+        return {"cap": int(min(1400, y0 + ZOOM_H - 150)), "hook": int(max(300, y0 - 40))}
     if mode == "wide":
-        fg_h = OUT_W * src_h / max(1, src_w)
+        ew, eh = _eff(plan, src_w, src_h)
+        fg_h = OUT_W * eh / max(1, ew)
         y0 = (OUT_H - fg_h) / 2 - 60
         return {"cap": int(min(1400, y0 + fg_h + 120)), "hook": int(max(300, y0 - 160))}
     return {"cap": 1300, "hook": 330}

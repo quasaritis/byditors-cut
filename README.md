@@ -23,7 +23,9 @@ This started from [PeakCut](https://github.com/haziqahmedqasmi/PeakCut) and adds
 | "Clip that" | Twitch chat command | The streamer **saying** "clip that / clip it / clip kar" (Hindi too) or **chat spamming** "clip it", on YouTube, Twitch and Kick |
 | Fixing a clip | – | **Trim editor** in the inbox: drag start and end over the original (15 s either side), change the hook and layout, render again |
 | Campaigns | – | **Campaign mode**: paste a Content Rewards / Vyro / Clipster brief, the AI reads the rules; clips follow its length, tags and bans, and views turn into an **earnings estimate** with links ready to submit |
-| Captions | English | Hinglish as spoken **or English** (translated), per link or per streamer; AI spell-check for Hinglish |
+| Captions | English | Hinglish as spoken, or translated to **English, Hindi, Urdu, Spanish, Portuguese, French, German, Italian, Indonesian or Turkish**, per link or per streamer; AI spell-check for Hinglish |
+| Styles | Presets, fonts, colours, cam spot | **Styles screen** with a live preview on your own video: 9 caption presets (pop, big word, subtitle, dark/orange box, outline, comic, bounce…), 11 bundled fonts (Hindi and Urdu scripts too), colours for text, the word being said, key words and the box, size/outline/shadow, 4 animations, drag captions and the heading where you want them (they still dodge faces); heading looks (white/dark/orange box, outline, comic, banner); **Full + blur / Zoomed in / Fill the screen**; cam **top half, bottom half or a corner box** with rounded corners and a border; cam **found by AI or drawn by you**; **pick the part of the video** to show; **Preview video** renders 7 s for real; templates to start from; per streamer, per link, or re-render one clip in another style |
+| Make clips options | Count, length, part, language | Same, plus streamer and style, remembered for next time |
 | Learning | – | Reads your **views, likes and comments** back from Instagram and YouTube every 6 hours: winners' streamers and hook styles post first, hook styles are **A/B tested**, **best posting time** learned per account, the AI sees your best hooks |
 | Languages | Parakeet (English-first) | **faster-whisper**: 99 languages, Hindi and Hinglish included, GPU if available |
 | Posting | YouTube, Instagram, TikTok | + **Facebook Reels**, a last Guard check before every post, quiet hours, per-account spacing and caps |
@@ -130,6 +132,7 @@ buttons, plus messages when a streamer goes live, a video posts or something fai
 | `bcut/ai.py` | The only code that talks to an AI service |
 | `bcut/reframe.py` | Face tracking, facecam detection and the 9:16 layouts |
 | `bcut/render.py` | ffmpeg render: captions placed off faces, hook, credit, loudness |
+| `bcut/styles.py` | Saved styles: captions, heading and layout settings, and the built-in templates |
 | `bcut/guard/` | The Rights & Safety Guard |
 | `bcut/publish/` | Post queue and the four platform publishers |
 | `bcut/server.py` | Local API + dashboard |
