@@ -86,6 +86,12 @@ def ig_refresh(account: dict) -> None:
     account["secrets"]["token"] = j["access_token"]
 
 
+def _cover_ms(clip: dict) -> int:
+    """Where the cover is in the video, in milliseconds (0 is a real answer: the thumbnail is the first frame)."""
+    at = (clip.get("guard") or {}).get("cover_at")
+    return int(1000 * float(1.0 if at is None else at))
+
+
 def post_instagram(account: dict, clip: dict, caption: str) -> tuple[str, str]:
     ig_refresh(account)
     s = account["secrets"]
@@ -94,7 +100,7 @@ def post_instagram(account: dict, clip: dict, caption: str) -> tuple[str, str]:
     box = _check(httpx.post(f"https://{host}/{V}/{s['user_id']}/media", timeout=T, data={
         "media_type": "REELS", "upload_type": "resumable", "caption": caption, "share_to_feed": "true",
         # the cover: the frame the editor picked (the biggest reaction), in milliseconds
-        "thumb_offset": str(int(1000 * float(((clip.get("guard") or {}).get("cover_at")) or 1.0))),
+        "thumb_offset": str(_cover_ms(clip)),
         "access_token": s["token"]}))
     cid = box["id"]
     _check(httpx.post(box.get("uri") or f"https://rupload.facebook.com/ig-api-upload/{V}/{cid}", timeout=T,
@@ -194,7 +200,29 @@ def post_youtube(account: dict, clip: dict, caption: dict) -> tuple[str, str]:
     _check(r)
     up = _check(httpx.put(r.headers["location"], timeout=T, content=path.read_bytes(),
                           headers={"authorization": f"Bearer {token}", "content-type": "video/mp4"}))
+    if clip.get("cover_file") and Path(clip["cover_file"]).exists():
+        yt_thumbnail(token, up["id"], Path(clip["cover_file"]))
     return up["id"], f"https://youtube.com/shorts/{up['id']}"
+
+
+def yt_thumbnail(token: str, video_id: str, image: Path) -> bool:
+    """Set the video's thumbnail. YouTube allows it only on channels verified by phone; when it says no, the video
+    keeps the frame YouTube picks, and the post still counts."""
+    try:
+        data = image.read_bytes()
+        if len(data) > 2 * 2**20:
+            return False
+        r = httpx.post("https://www.googleapis.com/upload/youtube/v3/thumbnails/set", timeout=T,
+                       params={"videoId": video_id, "uploadType": "media"}, content=data,
+                       headers={"authorization": f"Bearer {token}", "content-type": "image/jpeg"})
+        if r.status_code >= 400:
+            from .. import db
+            db.log(f"YouTube kept its own thumbnail: {r.text[:160]} (custom thumbnails need a phone-verified "
+                   "channel: youtube.com/verify)", "warn")
+            return False
+        return True
+    except (OSError, httpx.HTTPError):
+        return False
 
 
 # ---------------------------------------------------------------- TikTok (Direct Post)
@@ -245,7 +273,7 @@ def post_tiktok(account: dict, clip: dict, caption: str) -> tuple[str, str]:
     count = max(1, size // chunk)
     init = _check(httpx.post(f"{TT}/post/publish/video/init/", headers=h, timeout=T, json={
         "post_info": {"title": caption[:2200], "privacy_level": privacy, "disable_duet": False,
-                      "disable_comment": False, "disable_stitch": False, "video_cover_timestamp_ms": int(1000 * float(((clip.get("guard") or {}).get("cover_at")) or 1.0))},
+                      "disable_comment": False, "disable_stitch": False, "video_cover_timestamp_ms": _cover_ms(clip)},
         "source_info": {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": chunk,
                         "total_chunk_count": count}}))["data"]
     data = path.read_bytes()

@@ -1022,3 +1022,46 @@ def test_campaign_briefs_are_read_without_the_ai(client):
     k = client.post("/api/campaigns", json={"name": "Fanum", "rules": {**inr["rules"]}}).json()
     assert k["rules"]["currency"] == "₹"
     client.delete(f"/api/campaigns/{k['id']}")
+
+
+def test_thumbnails_are_made_changed_and_posted(tmp_path, client, monkeypatch):
+    """Every clip gets a designed thumbnail from its clean copy; the inbox can move the frame, change the text or
+    use your own picture; Instagram/TikTok get it as the first frames, YouTube gets the picture."""
+    from bcut import publish
+    src = _talky(tmp_path)
+    pr = probe(src)
+    job = {"id": "jthumb", "streamer_id": None, "url": "", "meta": {"style_id": "t_box"}}
+    c = {"start": 2.0, "end": 14.0, "score": 60, "hook": "He did it", "title": "Thumb test", "why": ""}
+    clip = pipeline.make_clip(job, src, pr, {"title": "t", "uploaded_by_you": True}, c, _talk_words(), None, [])
+    f = Path(clip["file"])
+    assert pipeline.clean_of(f).exists() and probe(pipeline.clean_of(f))["width"] == 1080
+    cov = pipeline.cover_file(clip)
+    assert cov.exists() and probe(cov)["width"] == 1080 and probe(cov)["height"] == 1920
+    t = clip["guard"]["thumb"]
+    assert t["text"] == "He did it" and t["settings"]["look"] == "orange" and t["first_frame"]
+    # inbox: another frame and other text
+    r = client.post(f"/api/clips/{clip['id']}/thumbnail", json={"at": 4.0, "text": "No way", "show_text": True})
+    assert r.status_code == 200 and r.json()["guard"]["thumb"]["text"] == "No way"
+    assert abs(r.json()["guard"]["thumb"]["at"] - 4.0) < 0.01
+    # your own picture
+    pic = tmp_path / "me.png"
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=800x600", "-frames:v", "1",
+                    str(pic)], check=True)
+    with pic.open("rb") as fh:
+        r = client.post(f"/api/clips/{clip['id']}/thumbnail/upload", files={"file": ("me.png", fh, "image/png")})
+    assert r.status_code == 200 and r.json()["guard"]["thumb"]["custom"]
+    assert client.get(f"/media/cover/{clip['id']}.jpg").status_code == 200
+    assert client.post(f"/api/clips/{clip['id']}/thumbnail/upload",
+                       files={"file": ("x.exe", b"MZ", "application/octet-stream")}).status_code == 400
+    # posting: Instagram gets a copy whose first frames are the thumbnail, cover at 0; YouTube the picture
+    stored = db.get("clips", clip["id"])
+    ig = publish._with_thumbnail(stored, "instagram")
+    assert ig["file"].endswith("_post.mp4") and ig["guard"]["cover_at"] == 0.0
+    assert abs(probe(Path(ig["file"]))["duration"] - probe(f)["duration"]) < 0.15
+    assert publish._with_thumbnail(stored, "youtube")["cover_file"] == str(cov)
+    from bcut.publish import platforms
+    assert platforms._cover_ms(ig) == 0
+    # back to the style's own thumbnail; turning the first-frame cover off posts the clip itself
+    r = client.post(f"/api/clips/{clip['id']}/thumbnail", json={"reset": True, "first_frame": False})
+    assert not r.json()["guard"]["thumb"]["custom"] and r.json()["guard"]["thumb"]["text"] == "He did it"
+    assert publish._with_thumbnail(db.get("clips", clip["id"]), "tiktok")["file"] == str(f)

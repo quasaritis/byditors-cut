@@ -226,9 +226,11 @@ HEAD_LOOK = {   # text colour, box colour (None: no box), outline scale, shadow,
 
 
 def build_ass(words: list[dict], start: float, end: float, hook: str, credit: str, plan: dict | int | None = None,
-              src_w: int = 1920, src_h: int = 1080, callout: dict | None = None, style: dict | None = None) -> str:
+              src_w: int = 1920, src_h: int = 1080, callout: dict | None = None, style: dict | None = None,
+              hook_scale: float = 1.0, hook_lines: int = 3) -> str:
     """Subtitles for one clip. `plan` is the reframe plan (an int is read as a fixed caption y, as before).
-    `style` is a saved style (bcut.styles); without one, the default look."""
+    `style` is a saved style (bcut.styles); without one, the default look. `hook_scale` makes the heading
+    bigger than the style allows (the thumbnail uses it)."""
     st = styles.clean(style or styles.TEMPLATES[0])
     cs, hs = st["captions"], st["heading"]
     if isinstance(plan, int) or plan is None:
@@ -252,7 +254,7 @@ def build_ass(words: list[dict], start: float, end: float, hook: str, credit: st
     hfont = _script_font(hook or "") or hs["font"]
     hupper = hs["upper"] and hfont == hs["font"]
     hsize0, hratio = _metrics(hfont)
-    hook_size = int(hsize0 * 0.7 * hs["size"] / 100)
+    hook_size = int(hsize0 * 0.7 * hs["size"] / 100 * hook_scale)
     h_ink, h_box, h_out, h_shad, h_tilt = HEAD_LOOK[hs["look"]]
     head = f"""[Script Info]
 ScriptType: v4.00+
@@ -278,7 +280,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         half_h = size * 0.3 + 0.2 * size + 6
     hook_box, hook_hold = [], 0.0
     hook_text = " ".join(_clean(x, hupper) for x in (hook or "").split()) if hs["show"] else ""
-    lines = _wrap(hook_text, hook_size, hratio, 860 if h_box else 900, hfont)[:3]
+    lines = _wrap(hook_text, hook_size, hratio, 860 if h_box else 900, hfont)[:hook_lines]
     if lines:
         hold = hook_hold = dur if hs["whole"] else min(3.0, max(1.8, dur * 0.2))
         line_h = hook_size * 0.34 + 8
@@ -290,8 +292,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if h_box:
             top, bottom = _box_v(hfont, hook_size, hupper)
             n = len(lines)
-            lh = hook_size                       # libass stacks lines one font size apart
-            # the ink of the block: first line's top to last line's bottom
+            # lines sit tight in a box (libass would stack them a whole font height apart): one event each
+            lh = (bottom - top) * 1.22 + 6
             ink_top = hy - (n - 1) * lh / 2 + top
             ink_bot = hy + (n - 1) * lh / 2 + bottom
             bw = (reframe.OUT_W if hs["look"] == "banner" else 2 * hw + 2 * pad_x)
@@ -299,8 +301,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             ev.append(_box_event(2, 0, hold, 540, ink_top - pad_y, bw, bh, h_box,
                                  extra=f"\\fad(120,{0 if hs['whole'] else 160})",
                                  radius=0 if hs["look"] == "banner" else bh * 0.22 / max(1, n)))
-            ev.append(f"Dialogue: 2,{_ts(0)},{_ts(hold)},Hook,,0,0,0,,"
-                      f"{{\\an5\\pos(540,{hy})\\fad(120,{0 if hs['whole'] else 160})}}" + "\\N".join(lines))
+            for i, ln in enumerate(lines):
+                ly = round(hy + (i - (n - 1) / 2) * lh)
+                ev.append(f"Dialogue: 2,{_ts(0)},{_ts(hold)},Hook,,0,0,0,,"
+                          f"{{\\an5\\pos(540,{ly})\\fad(120,{0 if hs['whole'] else 160})}}{ln}")
         else:
             ev.append(f"Dialogue: 2,{_ts(0)},{_ts(hold)},Hook,,0,0,0,,"
                       f"{{\\an5\\pos(540,{hy})\\blur0.6{fade_out}\\alpha&HFF&\\fscx70\\fscy70"
@@ -436,10 +440,11 @@ def _face_centre(plan: dict):
 
 def render(src: Path, out: Path, start: float, end: float, plan: dict, src_w: int, src_h: int,
            words: list[dict], hook: str = "", credit: str = "", has_audio: bool = True,
-           fx: dict | None = None, grade: bool = False, style: dict | None = None) -> Path:
+           fx: dict | None = None, grade: bool = False, style: dict | None = None, clean: Path | None = None) -> Path:
     """Render one clip. Works in a short temporary folder so Windows path limits and filter escaping can't bite.
     `fx` adds punch-ins ({"punches": [...]}) and sound hits ({"sounds": [...]}) from bcut.fx; `style` is how
-    the captions and the heading look (bcut.styles)."""
+    the captions and the heading look (bcut.styles). `clean` also saves the clip without its text, two frames a
+    second, for thumbnails."""
     from . import fx as fxmod
 
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -460,7 +465,9 @@ def render(src: Path, out: Path, start: float, end: float, plan: dict, src_w: in
         mask = reframe.corner_mask(plan, src_w, src_h, work / "mask.png") if reframe.needs_mask(plan) else None
         graph = (reframe.filter_graph(plan, src_w, src_h, has_cmds=bool(moves), mask_input=1 if mask else None) +
                  ";[v]" + ("eq=contrast=1.06:saturation=1.14:gamma=0.98," if grade else "") +
-                 (zoom + "," if zoom else "") + "subtitles=subs.ass:fontsdir=fonts,fps=30,format=yuv420p[vo]")
+                 (zoom + "," if zoom else "") +
+                 ("split=2[pre][pc];[pc]fps=2,format=yuv420p[vc];[pre]" if clean else "") +
+                 "subtitles=subs.ass:fontsdir=fonts,fps=30,format=yuv420p[vo]")
         cmd = [need("ffmpeg"), "-v", "error", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}",
                "-i", str(src.resolve())]
         if mask:
@@ -489,10 +496,62 @@ def render(src: Path, out: Path, start: float, end: float, plan: dict, src_w: in
             cmd += ["-map", "[ao]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000"]
         cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-profile:v", "high", "-movflags",
                 "+faststart", "-t", f"{dur:.3f}", "tmp.mp4"]
+        if clean:
+            cmd += ["-map", "[vc]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-g", "2",
+                    "-t", f"{dur:.3f}", "clean.mp4"]
         p = subprocess.run(cmd, cwd=work, capture_output=True, text=True)
         if p.returncode != 0:
             raise RuntimeError("Render failed: " + " | ".join(p.stderr.strip().splitlines()[-4:]))
         shutil.move(str(work / "tmp.mp4"), out)
+        if clean and (work / "clean.mp4").exists():
+            shutil.move(str(work / "clean.mp4"), clean)
+    return out
+
+
+THUMB_Y = {"top": 0.22, "middle": 0.5, "bottom": 0.72}
+PUNCH = "eq=contrast=1.08:saturation=1.18:brightness=0.015,unsharp=5:5:0.5"
+
+
+def cover_image(clip: Path, out: Path, at: float = 1.0, text: str = "", thumb: dict | None = None,
+                image: Path | None = None) -> Path:
+    """A full-size (1080x1920) thumbnail: a frame of the clip (or your own picture), a little extra contrast,
+    and big text in the style's look. `thumb` is a style's thumbnail settings (bcut.styles)."""
+    th = (styles.clean({"thumb": thumb or {}}))["thumb"]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="bcut") as td:
+        work = Path(td)
+        frame = work / "frame.png"
+        if image:
+            src_args = ["-i", str(Path(image).resolve())]
+        else:
+            src_args = ["-ss", f"{max(0.0, at):.2f}", "-i", str(Path(clip).resolve())]
+        subprocess.run([need("ffmpeg"), "-v", "error", "-y", *src_args, "-frames:v", "1", "-vf",
+                        f"scale={reframe.OUT_W}:{reframe.OUT_H}:force_original_aspect_ratio=increase,"
+                        f"crop={reframe.OUT_W}:{reframe.OUT_H},setsar=1", str(frame)], check=False)
+        if not frame.exists():
+            raise RuntimeError("Couldn't read a frame for the thumbnail")
+        chain = [PUNCH] if th["punch"] and not image else []
+        if th["text"] and text.strip():
+            fonts = work / "fonts"
+            fonts.mkdir()
+            for f in FONTS.glob("*.ttf"):
+                shutil.copy(f, fonts / f.name)
+            look = {"captions": {"show": False},
+                    "heading": {"show": True, "look": th["look"], "font": th["font"], "size": th["size"],
+                                "upper": th["upper"], "whole": True, "y": THUMB_Y[th["spot"]]}}
+            (work / "cover.ass").write_text(build_ass([], 0, 2, text, "", None, style=look, hook_scale=1.7,
+                                                      hook_lines=4), encoding="utf-8")
+            chain.append("subtitles=cover.ass:fontsdir=fonts")
+        if chain:
+            subprocess.run([need("ffmpeg"), "-v", "error", "-y", "-loop", "1", "-framerate", "10", "-t", "1",
+                            "-i", "frame.png", "-vf", ",".join(chain), "-ss", "0.6", "-frames:v", "1",
+                            "-q:v", "2", "cover.jpg"], cwd=work, check=False)
+        else:
+            subprocess.run([need("ffmpeg"), "-v", "error", "-y", "-i", "frame.png", "-q:v", "2", "cover.jpg"],
+                           cwd=work, check=False)
+        if not (work / "cover.jpg").exists():
+            raise RuntimeError("Couldn't draw the thumbnail")
+        shutil.copy(work / "cover.jpg", out)
     return out
 
 

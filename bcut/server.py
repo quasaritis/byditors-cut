@@ -86,6 +86,24 @@ def clip_thumb(cid: str):
     return FileResponse(c["thumb"], media_type="image/jpeg")
 
 
+@app.get("/media/cover/{cid}.jpg")
+def clip_cover(cid: str):
+    """The full-size thumbnail (falls back to the small one for clips made before thumbnails)."""
+    c = _need("clips", cid)
+    f = pipeline.cover_file(c)
+    if not f.exists():
+        return clip_thumb(cid)
+    return FileResponse(f, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/media/clean/{cid}.mp4")
+def clip_clean(cid: str):
+    """The clip without its text, for picking the thumbnail's frame (the clip itself when there's none)."""
+    c = _need("clips", cid)
+    f = pipeline.clean_of(Path(c["file"]))
+    return FileResponse(f if f.exists() else c["file"], media_type="video/mp4")
+
+
 # ---------------------------------------------------------------- overview
 
 def _clip_public(c: dict) -> dict:
@@ -338,6 +356,47 @@ def clip_layout(cid: str, b: dict = Depends(_body)):
         return _clip_public(pipeline.relayout(cid, str(b.get("layout") or "auto")))
     except RuntimeError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/clips/{cid}/thumbnail")
+def clip_thumbnail(cid: str, b: dict = Depends(_body)):
+    """Change the thumbnail: frame (seconds into the clip), text, text on/off, first-frame cover, or reset."""
+    _need("clips", cid)
+
+    def num(v):
+        try:
+            return None if v is None or v == "" else float(v)
+        except (TypeError, ValueError):
+            return None
+    try:
+        return _clip_public(pipeline.set_thumbnail(
+            cid, at=num(b.get("at")), text=b.get("text") if isinstance(b.get("text"), str) else None,
+            show_text=b.get("show_text") if isinstance(b.get("show_text"), bool) else None,
+            first_frame=b.get("first_frame") if isinstance(b.get("first_frame"), bool) else None,
+            reset=bool(b.get("reset"))))
+    except RuntimeError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.post("/api/clips/{cid}/thumbnail/upload")
+async def clip_thumbnail_upload(cid: str, file: UploadFile = File(...)):
+    """Use your own picture as the thumbnail (JPG, PNG or WebP, cropped to fill the vertical frame)."""
+    _need("clips", cid)
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+        raise HTTPException(400, "Use a JPG, PNG or WebP picture")
+    tmp = config.DATA / "tmp" / f"thumb_{cid}{ext}"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    data = await file.read(15 * 2**20 + 1)
+    if len(data) > 15 * 2**20:
+        raise HTTPException(400, "That picture is over 15 MB")
+    tmp.write_bytes(data)
+    try:
+        return _clip_public(pipeline.set_thumbnail(cid, image=tmp))
+    except RuntimeError as e:
+        raise HTTPException(400, f"Couldn't use that picture: {e}") from e
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 @app.post("/api/clips/{cid}/edit")

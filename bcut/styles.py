@@ -5,6 +5,9 @@ A style is three groups of settings:
             behind the words), outline, shadow, animation, and where on screen (empty = decided per clip)
 - heading:  the hook shown on top: whether to show it, its look (white box, dark box, outline, ...), font,
             size, where it sits and how long it stays
+- thumb:    the thumbnail (cover): text on it (the heading or the title), its look, font, size and spot, which
+            frame, a little extra contrast, and whether it goes in as the video's first frame so Instagram and
+            TikTok show it as the cover
 - layout:   how the video fills the vertical screen (smart, whole frame on blur, zoomed in, fill the screen),
             where the streamer's cam goes (top half, bottom half, a corner box with rounded corners and a
             border), how the cam is found (AI, or a box you drew) and which part of the video to show
@@ -29,6 +32,9 @@ ANIMS = {"pop": "Pop", "bounce": "Bounce", "slide": "Slide up", "none": "None"}
 BOXES = {"none": "No box", "line": "Box behind the line", "word": "Box behind the word being said"}
 FRAMINGS = {"smart": "Smart (follow faces)", "blur": "Full + blur", "zoom": "Zoomed in", "fill": "Fill the screen"}
 CAM_SPOTS = {"top": "Top half", "bottom": "Bottom half", "corner": "Corner", "off": "No cam"}
+THUMB_FRAMES = {"reaction": "Biggest reaction", "start": "Start of the clip"}
+THUMB_SPOTS = {"top": "Top", "middle": "Middle", "bottom": "Bottom"}
+THUMB_TEXT = {"hook": "The heading", "title": "The title"}
 HEAD_LOOKS = {"outline": "Outline", "white": "White box", "dark": "Dark box", "orange": "Orange box",
               "comic": "Comic", "banner": "Banner", "plain": "Plain"}
 
@@ -67,6 +73,8 @@ DEFAULT = {
                                                          if k != "label"}, "y": None},
     "heading": {"show": True, "look": "outline", "font": "Anton", "size": 100, "upper": True, "y": None,
                 "whole": False},
+    "thumb": {"text": True, "source": "hook", "look": "white", "font": "Poppins Black", "size": 100, "upper": False,
+              "spot": "middle", "frame": "reaction", "punch": True, "first_frame": True},
     "layout": {"framing": "smart", "cam": "top", "cam_find": "ai", "cam_box": None,
                "corner": {"x": 0.04, "y": 0.1, "w": 0.42}, "round": 28, "border": 4, "border_color": "#FFFFFF",
                "part": None},
@@ -88,20 +96,27 @@ TEMPLATES = [
     {"id": "t_default", "name": "Default", **copy.deepcopy(DEFAULT)},
     {"id": "t_hype", "name": "Hype", **_with(DEFAULT, captions=_preset("bigword"),
                                              heading={"look": "white", "font": "Poppins ExtraBold", "upper": False,
-                                                      "size": 90, "whole": True})},
+                                                      "size": 90, "whole": True},
+                                             thumb={"look": "outline", "font": "Titan One", "upper": True,
+                                                    "size": 115, "spot": "top"})},
     {"id": "t_clean", "name": "Clean", **_with(DEFAULT, captions=_preset("subtitle"),
                                                heading={"look": "plain", "font": "Poppins ExtraBold",
                                                         "upper": False, "size": 80},
+                                               thumb={"look": "dark", "font": "Poppins ExtraBold", "punch": False},
                                                layout={"framing": "blur"})},
     {"id": "t_box", "name": "Box", **_with(DEFAULT, captions=_preset("orangebox"),
                                            heading={"look": "dark", "font": "Poppins Black", "upper": False,
-                                                    "size": 88, "whole": True})},
+                                                    "size": 88, "whole": True},
+                                           thumb={"look": "orange"})},
     {"id": "t_bounce", "name": "Bounce", **_with(DEFAULT, captions=_preset("bounce"),
                                                  heading={"look": "white", "font": "Lilita One", "upper": False,
                                                           "size": 92, "whole": True},
+                                                 thumb={"font": "Lilita One", "size": 110},
                                                  layout={"cam": "corner"})},
     {"id": "t_comic", "name": "Comic", **_with(DEFAULT, captions=_preset("comic"),
-                                               heading={"look": "comic", "font": "Bangers", "size": 110})},
+                                               heading={"look": "comic", "font": "Bangers", "size": 110},
+                                               thumb={"look": "comic", "font": "Bangers", "upper": True,
+                                                      "size": 120, "spot": "top"})},
 ]
 TEMPLATES[0]["captions"]["font"] = TEMPLATES[0]["heading"]["font"] = (config.CAPTION_FONT if config.CAPTION_FONT
                                                                        in FONTS else "Anton")
@@ -145,8 +160,9 @@ def clean(s: dict | None) -> dict:
     """A complete, safe style from anything the dashboard sends (missing values come from the default)."""
     s = s or {}
     d = DEFAULT
-    c_in, h_in, l_in = (s.get(g) if isinstance(s.get(g), dict) else {} for g in ("captions", "heading", "layout"))
-    dc, dh, dl = d["captions"], d["heading"], d["layout"]
+    c_in, h_in, l_in, t_in = (s.get(g) if isinstance(s.get(g), dict) else {}
+                              for g in ("captions", "heading", "layout", "thumb"))
+    dc, dh, dl, dt = d["captions"], d["heading"], d["layout"], d["thumb"]
     cap = {
         "show": bool(c_in.get("show", dc["show"])),
         "preset": _pick(c_in.get("preset"), CAPTION_PRESETS, dc["preset"]),
@@ -172,6 +188,18 @@ def clean(s: dict | None) -> dict:
         "whole": bool(h_in.get("whole", dh["whole"])),
         "y": None if h_in.get("y") in (None, "") else round(_num(h_in.get("y"), 0.06, 0.9, 0.17), 3),
     }
+    thumb = {
+        "text": bool(t_in.get("text", dt["text"])),
+        "source": _pick(t_in.get("source"), THUMB_TEXT, dt["source"]),
+        "look": _pick(t_in.get("look"), HEAD_LOOKS, dt["look"]),
+        "font": _pick(t_in.get("font"), FONTS, dt["font"]),
+        "size": round(_num(t_in.get("size"), 50, 160, dt["size"])),
+        "upper": bool(t_in.get("upper", dt["upper"])),
+        "spot": _pick(t_in.get("spot"), THUMB_SPOTS, dt["spot"]),
+        "frame": _pick(t_in.get("frame"), THUMB_FRAMES, dt["frame"]),
+        "punch": bool(t_in.get("punch", dt["punch"])),
+        "first_frame": bool(t_in.get("first_frame", dt["first_frame"])),
+    }
     lay = {
         "framing": _pick(l_in.get("framing"), FRAMINGS, dl["framing"]),
         "cam": _pick(l_in.get("cam"), CAM_SPOTS, dl["cam"]),
@@ -187,7 +215,8 @@ def clean(s: dict | None) -> dict:
     if lay["cam_find"] == "draw" and not lay["cam_box"]:
         lay["cam_find"] = "ai"
     name = str(s.get("name") or "My style").strip()[:40] or "My style"
-    return {"id": str(s.get("id") or ""), "name": name, "captions": cap, "heading": head, "layout": lay}
+    return {"id": str(s.get("id") or ""), "name": name, "captions": cap, "heading": head, "thumb": thumb,
+            "layout": lay}
 
 
 # ── storage ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -274,5 +303,5 @@ def for_job(job: dict | None, streamer: dict | None) -> dict:
 def options() -> dict:
     """Everything the Styles screen needs to draw its pickers."""
     return {"fonts": FONTS, "anims": ANIMS, "boxes": BOXES, "framings": FRAMINGS, "cams": CAM_SPOTS,
-            "heads": HEAD_LOOKS,
+            "heads": HEAD_LOOKS, "thumb_frames": THUMB_FRAMES, "thumb_spots": THUMB_SPOTS, "thumb_text": THUMB_TEXT,
             "presets": {k: {kk: vv for kk, vv in v.items()} for k, v in CAPTION_PRESETS.items()}}

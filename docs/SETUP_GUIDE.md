@@ -71,7 +71,8 @@ Clips are saved in the app's `data\clips` folder as 1080 × 1920 MP4 files.
 - **Sound hits** under the zooms and the rewind: real recorded sounds (free CC0 sounds by Kenney). To use your own,
   put files called `boom`, `hit`, `whoosh`, `rewind` or `pop` (.mp3, .wav or .ogg) in the app's `data\sfx` folder.
 - **Seamless loop**: the last quarter second dissolves into the first frame, so the replay doesn't jump.
-- **Cover image**: the frame on the biggest reaction. It's used as the Instagram and TikTok cover.
+- **Thumbnail**: the frame on the biggest reaction with the hook on it, in your style (see *Styles* below).
+  It's the YouTube thumbnail and the Instagram and TikTok cover.
 
 - **Freeze-frame callout** on the biggest moment: the picture holds for a beat with a record scratch and a short
   line like "WAIT WHAT", plus a light colour grade. It makes a repost your own edit, which platforms and campaigns
@@ -97,6 +98,12 @@ of your newest clip; **Preview video** renders 7 seconds of it in the style for 
   step aside when a face is there. **Automatic** puts them back.
 - **Heading**: the hook on top. Its look (outline, white box, dark box, orange box, comic, banner, plain), font,
   size, and whether it stays for the whole clip or only the first seconds. Drag it to move it.
+- **Thumbnail**: the cover people see on your profile and in the feed. Big text over a frame (the heading or the
+  title), in any of the heading looks, font, size and spot (top, middle, bottom); the frame on the biggest reaction
+  or the start of the clip; **Punch up the picture** adds a little contrast and colour. YouTube gets it as the
+  video's thumbnail (YouTube only allows that on channels verified by phone: youtube.com/verify). Instagram and
+  TikTok only take the cover as a frame of the video, so with **Use it as the cover on Instagram and TikTok** on,
+  it goes in as the clip's first 1/15 second and the cover points there.
 - **Layout**:
   - **Video**: *Smart* follows faces and picks the layout per clip, *Full + blur* shows the whole picture on a
     blurred fill, *Zoomed in* shows a bigger middle, *Fill the screen* crops to fill it.
@@ -109,7 +116,9 @@ of your newest clip; **Preview video** renders 7 seconds of it in the style for 
     part of the screen matters).
 
 To change one clip, open it in the **Clip inbox**, pick another **Style** under **Edit this clip** and press
-**Render again**. Hindi and Urdu captions automatically use a font made for their script.
+**Render again**. Its **Thumbnail** card lets you drag to another frame, change the text, turn the text off, use
+your own picture (**Use my own picture**: JPG, PNG or WebP, cropped to fill the screen), go **Back to the style's**
+or download it. Hindi and Urdu captions automatically use a font made for their script.
 
 ### Fixing a clip by hand
 

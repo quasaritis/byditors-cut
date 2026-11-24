@@ -249,6 +249,12 @@ tr.click:hover td{background:#151515}
 }
 .mclip{display:none;gap:8px;margin-bottom:18px}
 
+/* ---------- clip thumbnail ---------- */
+.thumbed{display:grid;grid-template-columns:132px minmax(0,1fr);gap:16px;align-items:start}
+.tframe{position:relative;aspect-ratio:9/16;border-radius:10px;overflow:hidden;background:#0d0d0d;box-shadow:inset 0 0 0 1px #222}
+.tframe img,.tframe video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+@media (max-width:860px){.thumbed{grid-template-columns:110px minmax(0,1fr)}}
+
 /* ---------- styles: how clips look ---------- */
 .stylegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:18px}
 .scard{display:flex;flex-direction:column;gap:10px;background:none;border:0;padding:0;text-align:left;cursor:pointer;color:inherit}
@@ -513,7 +519,7 @@ function musicSVG(curve) {
 async function showClip(id) {
   const box = $("#detail"); if (!box) return;
   const [c, accs] = await Promise.all([api(`/api/clips/${id}`), api("/api/accounts"), styleData().catch(() => null)]);
-  const g = c.guard || {}, checks = g.checks || [];
+  const g = c.guard || {}, checks = g.checks || [], th = g.thumb || {};
   const status = {ok: "Passed", warn: "Note", review: "Look at this", block: "Blocked"};
   const caps = c.captions || {};
   const plats = ["instagram","youtube","tiktok","facebook"].filter(p => caps[p] !== undefined);
@@ -544,6 +550,18 @@ async function showClip(id) {
         ${plats.map((p,i) => { const v = caps[p]; const text = typeof v === "object" ? `${v.title}\n\n${v.description}` : v; return `<textarea class="field" data-cap="${p}" aria-label="${PLAT[p]} caption" ${i ? "hidden" : ""} rows="6">${esc(text)}</textarea>`; }).join("")}
         <div class="acts" style="margin-top:12px"><button class="btn sm" id="savecap">Save text</button></div>
       </section>
+      <section class="card" aria-labelledby="h-thumb"><header><h2 id="h-thumb">Thumbnail</h2><span class="faint">${th.custom ? "Your own picture" : "Made from the clip"}</span></header>
+        <div class="thumbed"><div class="tframe"><img id="tcover" src="/media/cover/${c.id}.jpg?v=${S.bust || 0}" alt="The clip's thumbnail"><video id="tvid" src="/media/clean/${c.id}.mp4" muted playsinline preload="metadata" hidden></video></div>
+          <div class="tctl">
+            <label class="f" for="t-at">Frame</label><div class="trimrow" style="grid-template-columns:1fr 54px"><input type="range" id="t-at" min="0" max="${Math.max(1, c.duration).toFixed(1)}" step="0.1" value="${(+(th.at ?? 1)).toFixed(1)}" ${th.custom ? "disabled" : ""}><output id="o-at">${dur(+(th.at ?? 1))}</output></div>
+            <label class="f" for="t-text" style="margin-top:10px">Text</label><input class="field" id="t-text" maxlength="120" value="${esc(th.text ?? (c.hook || ""))}" placeholder="What happens in the clip">
+            <div class="swrow" style="margin-top:6px"><div><b>Show the text</b></div><span class="tog"><input type="checkbox" id="t-show" aria-label="Show the text" ${(th.settings?.text ?? true) ? "checked" : ""}><span></span></span></div>
+            <div class="swrow"><div><b>Cover on Instagram and TikTok</b><p>Goes in as the video's first 1/15 second.</p></div><span class="tog"><input type="checkbox" id="t-first" aria-label="Use as the cover on Instagram and TikTok" ${(th.first_frame ?? true) ? "checked" : ""}><span></span></span></div>
+            <div class="acts" style="margin-top:10px"><button class="btn primary sm" type="button" id="t-save">Save thumbnail</button>
+              <label class="btn sm" for="t-file" style="cursor:pointer">Use my own picture</label><input type="file" id="t-file" accept="image/jpeg,image/png,image/webp" hidden>
+              ${th.custom || th.edited ? `<button class="btn ghost sm" type="button" id="t-reset">Back to the style's</button>` : ""}
+              <a class="btn ghost sm" href="/media/cover/${c.id}.jpg" download="thumbnail-${c.id}.jpg">Download</a></div>
+          </div></div></section>
       <section class="card" aria-labelledby="h-post"><header><h2 id="h-post">Post it</h2>${c.posts.length ? `<span class="faint">${c.posts.map(p => `${esc(p.status)} ${p.remote_url ? `<a href="${esc(p.remote_url)}" target="_blank" rel="noopener">open</a>` : ""}`).join(" · ")}</span>` : ""}</header>
         ${accs.accounts.length ? `<div class="targets">${accs.accounts.map(a => `<label><input type="checkbox" value="${a.id}" checked> ${PLAT[a.platform]} · ${esc(a.name)}</label>`).join("")}</div>`
           : `<p class="muted" style="margin:0 0 14px">No accounts connected yet. <a href="#accounts">Connect Instagram, YouTube or TikTok</a>.</p>`}
@@ -583,6 +601,20 @@ async function showClip(id) {
     $("#relay").onclick = e => act(e.currentTarget, async () => {
       await api(`/api/clips/${id}/edit`, {method: "POST", body: {start: w.from + +ts.value, end: w.from + +te.value, hook: $("#t-hook").value, layout: $("#lay")?.value, title: $("#ctitle").value, style_id: $("#cstyle")?.value}});
       S.bust = Date.now(); showClip(id); }, "Rendered");
+  }
+  {   // thumbnail: scrub the clean clip to pick a frame, then render it with the text
+    const at = $("#t-at"), tv = $("#tvid"), img = $("#tcover");
+    tv.onloadedmetadata = () => { if (isFinite(tv.duration) && tv.duration) at.max = Math.max(0.5, tv.duration - 0.3).toFixed(1); };
+    at.oninput = () => { $("#o-at").textContent = dur(+at.value); tv.hidden = false; img.hidden = true; tv.currentTime = +at.value; };
+    $("#t-save").onclick = e => act(e.currentTarget, async () => {
+      await api(`/api/clips/${id}/thumbnail`, {method: "POST", body: {at: at.disabled ? null : +at.value, text: $("#t-text").value, show_text: $("#t-show").checked, first_frame: $("#t-first").checked}});
+      S.bust = Date.now(); showClip(id); }, "Thumbnail saved");
+    $("#t-file").onchange = async () => { const f = $("#t-file").files[0]; if (!f) return;
+      const fd = new FormData(); fd.append("file", f); toast("Making the thumbnail…");
+      try { const r = await fetch(`/api/clips/${id}/thumbnail/upload`, {method: "POST", body: fd}); const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.detail || "Couldn't use that picture"); S.bust = Date.now(); toast("Thumbnail saved"); showClip(id); }
+      catch (err) { toast(err.message, true); } };
+    if ($("#t-reset")) $("#t-reset").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/thumbnail`, {method: "POST", body: {reset: true}}); S.bust = Date.now(); showClip(id); }, "Back to the style's thumbnail");
   }
   $("#recheck").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/recheck`, {method: "POST"}); showClip(id); }, "Checked again");
   $("#reject").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/reject`, {method: "POST"}); viewInbox(); }, "Rejected");
@@ -925,15 +957,22 @@ function bgStyle(img, plan, rect, o) {
   const ox = rect[0] * W + (rect[2] * W - o[2] / s) / 2, oy = rect[1] * H + (rect[3] * H - o[3] / s) / 2;
   return `left:${pc(o[0], 1080)};top:${pc(o[1], 1920)};width:${pc(o[2], 1080)};height:${pc(o[3], 1920)};${img ? `background-image:url(${img});background-size:${U(W * s)} ${U(H * s)};background-position:${U(-ox * s)} ${U(-oy * s)}` : ""}`;
 }
-function phoneHTML(st, smp, edit = false) {
+function phoneHTML(st, smp, edit = false, mode = "clip") {
   const plan = phonePlan(st, smp), img = smp?.clip_id ? `/media/style-frame.jpg?at=${smp.at}&c=${smp.clip_id}` : "";
   let h = plan.blur && img ? `<div class="bgblur" style="background-image:url(${img})"></div>` : "";
   h += plan.panels.map(p => `<div class="lay" style="${bgStyle(img, plan, p.rect, p.out)}"></div>`).join("");
   if (!img) h = `<div class="ph-ph">Make a clip to preview on your own video</div>` + plan.panels.map(p => `<div class="lay" style="${bgStyle("", plan, p.rect, p.out)};background:linear-gradient(160deg,#2b3a26,#141c12 60%,#2a2215);opacity:.9"></div>`).join("");
   if (plan.cam) { const L = st.layout, o = plan.cam.out, b = L.border;
     h += `<div class="camov${edit ? " cdrag" : ""}" data-drag="corner" style="${bgStyle(img, plan, plan.cam.rect, o)};${img ? "" : "background:#3b2f2a;"}border-radius:${U(L.round)};box-shadow:0 0 0 ${U(b)} ${L.border_color};${edit ? "cursor:grab;touch-action:none" : ""}"></div>`; }
-  h += `<span class="credit">@creator</span>`;
   const sp = plan.spots, cs = st.captions, hs = st.heading;
+  if (mode === "thumb") {      // the thumbnail: the frame, a little punchier, with big text
+    const th = st.thumb, [ink, box, outl, shad, tilt] = HEADLOOK[th.look] || HEADLOOK.white, f = fontPx(th.font, th.size, 0.7 * 1.7);
+    let txt = (th.source === "title" ? smp?.title : smp?.hook) || smp?.hook || "He actually did it"; if (th.upper) txt = txt.toUpperCase();
+    const y = {top: 0.22, middle: 0.5, bottom: 0.72}[th.spot] * 1920, ol = Math.max(5, Math.round(f.ass / 15)) * outl;
+    const boxCss = box ? `background:${box};padding:${U(f.css * 0.2)} ${U(f.css * 0.3)};border-radius:${th.look === "banner" ? 0 : U(f.css * 0.26)};box-decoration-break:clone;-webkit-box-decoration-break:clone;` : "";
+    return `<div class="phone" style="container-type:inline-size;${th.punch ? "filter:contrast(1.08) saturate(1.18)" : ""}">${h}${th.text ? `<div class="t" style="top:${pc(y, 1920)};font:${U(f.css)}/1.18 ${ff(th.font)};${textCSS(ink, box ? 0 : ol, shad)};white-space:normal;width:${U(th.look === "banner" ? 1080 : 900)};${tilt ? `transform:translate(-50%,-50%) rotate(${tilt}deg);` : ""}"><span style="${boxCss}">${esc(txt)}</span></div>` : ""}</div>`;
+  }
+  h += `<span class="credit">@creator</span>`;
   if (hs.show) {
     const [ink, box, outl, shad, tilt] = HEADLOOK[hs.look] || HEADLOOK.outline, f = fontPx(hs.font, hs.size, 0.7);
     let txt = smp?.hook || "He actually did it"; if (hs.upper) txt = txt.toUpperCase();
@@ -983,9 +1022,10 @@ function styleEditor(id) {
       <button class="btn" id="sprev">Preview video</button><button class="btn primary" id="ssave">${ED.template ? "Save as my style" : "Save changes"}</button></div></div>
   <div class="seditor"><div class="stage"><div id="phone"></div><video id="pvid" controls playsinline hidden></video>
       <p class="hint" id="stagehint" style="margin:0">Drag the captions or the heading to move them${st.layout.cam === "corner" ? ", and the cam box to place it" : ""}.</p></div>
-    <div><div class="stabs" role="tablist">${[["captions", "Captions"], ["heading", "Heading"], ["layout", "Layout"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${ED.tab === k}">${l}</button>`).join("")}</div><div id="spanel"></div></div></div>`;
+    <div><div class="stabs" role="tablist">${[["captions", "Captions"], ["heading", "Heading"], ["thumb", "Thumbnail"], ["layout", "Layout"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${ED.tab === k}">${l}</button>`).join("")}</div><div id="spanel"></div></div></div>`;
   drawPhone(); drawPanel();
-  main.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ED.tab = b.dataset.tab; main.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b)); drawPanel(); });
+  main.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { ED.tab = b.dataset.tab; main.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b)); drawPanel(); drawPhone();
+    $("#stagehint").textContent = ED.tab === "thumb" ? "This is the thumbnail: the cover people see on your profile and in the feed." : "Drag the captions or the heading to move them."; });
   $("#sname").oninput = e => { st.name = e.target.value; ED.dirty = true; };
   $("#ssave").onclick = e => act(e.currentTarget, async () => {
     const saved = ED.template ? await api("/api/styles", {method: "POST", body: st}) : await api(`/api/styles/${id}`, {method: "PATCH", body: st});
@@ -1005,7 +1045,7 @@ function styleEditor(id) {
 function changed(redrawPanel = false) { ED.dirty = true; drawPhone(); if (redrawPanel) drawPanel(); }
 function drawPhone() {
   const box = $("#phone"); if (!box) return;
-  box.innerHTML = phoneHTML(ED.st, SAMPLE, true);
+  box.innerHTML = phoneHTML(ED.st, SAMPLE, ED.tab !== "thumb", ED.tab === "thumb" ? "thumb" : "clip");
   const ph = box.querySelector(".phone");
   ph.querySelectorAll("[data-drag]").forEach(el => el.onpointerdown = e => {
     if (e.button !== 0) return; e.preventDefault(); el.setPointerCapture(e.pointerId);
@@ -1052,6 +1092,19 @@ function drawPanel() {
       <div class="sgroup"><h3>Font</h3>${chipset("heading.font", fonts, hs.font, "font")}</div>
       <div class="sgroup"><h3>Size and timing</h3>${slider("heading.size", "Size", 40, 160, hs.size, "%")}${tog("heading.upper", "Capital letters", hs.upper)}${tog("heading.whole", "Keep it on screen the whole clip", hs.whole, "Off: it shows for the first two or three seconds.")}
         <div class="swrow"><div><b>Position</b><p>${hs.y == null ? "Decided per clip, and always off faces." : `Moved by you (${Math.round(hs.y * 100)}% down).`}</p></div>${hs.y == null ? "" : `<button class="btn ghost sm" data-reset="heading">Automatic</button>`}</div></div>`;
+  } else if (ED.tab === "thumb") {
+    const th = st.thumb;
+    const look = (k, l) => { const [ink, box, outl] = HEADLOOK[k]; return `<button type="button" class="tilebtn" data-pick="thumb.look" data-v="${k}" aria-pressed="${th.look === k}"><div class="sw"><span style="font:15px/1 ${ff(th.font)};color:${ink};${box ? `background:${box};padding:5px 8px;border-radius:${k === "banner" ? 0 : 6}px;` : ""}-webkit-text-stroke:${outl * 2}px #000;${k === "comic" ? "transform:rotate(-3deg);" : ""}">He did it</span></div>${esc(l)}</button>`; };
+    p.innerHTML = `<div class="sgroup">${tog("thumb.text", "Text on the thumbnail", th.text, "Big text over the frame, so the cover says what happens.")}
+        <div style="margin-top:10px">${chipset("thumb.source", O.thumb_text, th.source)}</div><p class="hint">You can change the text on any clip in the Clip inbox.</p></div>
+      <div class="sgroup"><h3>Look</h3><div class="tiles">${Object.entries(O.heads).map(([k, l]) => look(k, l)).join("")}</div></div>
+      <div class="sgroup"><h3>Font</h3>${chipset("thumb.font", fonts, th.font, "font")}</div>
+      <div class="sgroup"><h3>Size and spot</h3>${slider("thumb.size", "Size", 50, 160, th.size, "%")}${tog("thumb.upper", "Capital letters", th.upper)}
+        <div style="margin-top:10px">${chipset("thumb.spot", O.thumb_spots, th.spot)}</div></div>
+      <div class="sgroup"><h3>Picture</h3>${chipset("thumb.frame", O.thumb_frames, th.frame)}
+        <p class="hint">The biggest reaction is the frame on the loudest moment, a face mid-reaction. Pick any other frame per clip.</p>
+        ${tog("thumb.punch", "Punch up the picture", th.punch, "A little more contrast and colour, like editors do for covers.")}</div>
+      <div class="sgroup"><h3>Where it shows</h3>${tog("thumb.first_frame", "Use it as the cover on Instagram and TikTok", th.first_frame, "They only take the cover as a frame of the video, so the thumbnail goes in as its first 1/15 second. YouTube gets it as the thumbnail itself (on channels verified by phone).")}</div>`;
   } else {
     const fr = (k, l, pic) => `<button type="button" class="tilebtn" data-pick="layout.framing" data-v="${k}" aria-pressed="${L.framing === k}"><div class="sw" style="background:#0a0a0a">${pic}</div>${esc(l)}</button>`;
     const mini = inner => `<div style="width:30px;height:52px;border-radius:5px;background:#1d1d1d;position:relative;overflow:hidden">${inner}</div>`;

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import queue
 import shutil
+import subprocess
 import threading
 import time
 import traceback
@@ -59,7 +60,7 @@ def credit_for(streamer: dict | None, info: dict) -> str:
 
 def produce(src: Path, out: Path, start: float, end: float, w: int, h: int, has_audio: bool, words: list[dict],
             hook: str, credit: str, layout: str = "auto", st: dict | None = None, log=print,
-            callout: str = "", look: dict | None = None) -> dict:
+            callout: str = "", look: dict | None = None, clean: Path | None = None) -> dict:
     """Edit and render one clip: cut dead air, cold open, layout, punch-ins, sound, captions, loop.
     Every render (new clips, a layout change, a trim from the Inbox) goes through here. `look` is the saved
     style (captions, heading, layout; bcut.styles), the default one when not given."""
@@ -82,7 +83,7 @@ def produce(src: Path, out: Path, start: float, end: float, w: int, h: int, has_
         if built.get("freeze"):
             ev["callout"] = {"text": callout or fx.default_callout(hook), "at": built["freeze"]}
         render.render(body, out, b0, b1, plan, w, h, ws, hook=hook, credit=credit, has_audio=has_audio, fx=ev,
-                      grade=st.get("original", False), style=look)
+                      grade=st.get("original", False), style=look, clean=clean)
     finally:
         work.unlink(missing_ok=True)
     plan_info = {"mode": plan.get("mode"), "burned": bool(plan.get("burned")),
@@ -120,9 +121,11 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     look = styles.for_job(job, streamer)
     made = produce(src, out, c["start"], c["end"], probe["width"], probe["height"], probe["has_audio"], cw,
                    c.get("hook", ""), credit, (streamer or {}).get("layout", "auto"), log=log,
-                   callout=c.get("callout", ""), look=look)
+                   callout=c.get("callout", ""), look=look, clean=clean_of(out))
     plan = made["plan"]
-    thumb = cover(out, out_dir / f"{cid}.jpg", made)
+    th = look["thumb"]
+    thumb_text = (c.get("title") if th["source"] == "title" else c.get("hook")) or c.get("hook") or c.get("title") or ""
+    thumb = cover(out, out_dir / f"{cid}.jpg", made, th, thumb_text)
     text = spoken
     clip = {"id": cid, "job_id": job["id"], "streamer_id": job.get("streamer_id"), "title": c.get("title", ""),
             "hook": c.get("hook", ""), "start": c["start"], "end": c["end"], "score": c.get("score", 0),
@@ -148,6 +151,9 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
                                 credit, plan)
     report["made"] = made["info"]
     report["cover_at"] = made.get("cover_at")
+    report["thumb"] = {"at": made.get("cover_at"), "auto_at": made.get("cover_at"), "text": thumb_text[:120],
+                       "custom": False,
+                       "first_frame": th["first_frame"], "settings": th}
     report["hook_style"] = c.get("hook_style", "")
     report["text"] = text[:4000]
     report["ai_flags"] = c.get("flags") or []
@@ -182,16 +188,119 @@ def make_clip(job: dict, src: Path, probe: dict, info: dict, c: dict, words: lis
     return saved
 
 
-def cover(clip: Path, out: Path, made: dict) -> Path:
-    """The cover image: a frame on the biggest punch-in (a face mid-reaction) or, without one, the first
-    second after the hook lands. Stored as the thumbnail and used as the Instagram/TikTok cover."""
+def clean_of(clip: Path) -> Path:
+    """The clip without its captions and heading (two frames a second): thumbnails take their frame from it."""
+    return clip.with_name(clip.stem + "_clean.mp4")
+
+
+def cover_file(clip: dict | Path) -> Path:
+    """The full-size thumbnail (1080x1920) next to a clip."""
+    f = Path(clip["file"]) if isinstance(clip, dict) else Path(clip)
+    return f.with_name(f.stem + "_cover.jpg")
+
+
+def cover(clip: Path, out: Path, made: dict, thumb: dict | None = None, text: str = "",
+          at: float | None = None, image: Path | None = None) -> Path:
+    """The thumbnail: a frame on the biggest punch-in (a face mid-reaction) or, without one, the first second
+    after the hook lands (or the start, or the frame you picked), with the style's text on it. Saved full size
+    (used as the YouTube thumbnail and the Instagram/TikTok cover) and small (for the dashboard)."""
+    th = styles.clean({"thumb": thumb or {}})["thumb"]
     dur = made.get("dur") or 3.0
-    punches = (made.get("fx") or {}).get("punches") or []
-    big = [p for p in punches if p.get("shake")] or punches
-    at = (big[0]["t"] + 0.45) if big else min(1.5, dur / 3)
-    at = max(0.2, min(at, dur - 0.3))
+    if at is None:
+        punches = (made.get("fx") or {}).get("punches") or []
+        big = [p for p in punches if p.get("shake")] or punches
+        if th["frame"] == "start":
+            at = 0.3
+        else:
+            at = (big[0]["t"] + 0.45) if big else min(1.5, dur / 3)
+    at = max(0.0, min(float(at), dur - 0.3))
     made["cover_at"] = round(at, 2)
+    clean = clean_of(clip)
+    full = cover_file(clip)
+    try:
+        render.cover_image(clean if clean.exists() else clip, full, at, text, th, image=image)
+        subprocess.run([media.need("ffmpeg"), "-v", "error", "-y", "-i", str(full), "-vf", "scale=360:-2",
+                        "-q:v", "4", str(out)], check=False)
+        if out.exists():
+            return out
+    except RuntimeError:
+        pass
     return render.thumbnail(clip, out, at=at)
+
+
+def set_thumbnail(clip_id: str, at: float | None = None, text: str | None = None, show_text: bool | None = None,
+                  first_frame: bool | None = None, image: Path | None = None, reset: bool = False) -> dict:
+    """Change a clip's thumbnail from the Inbox: another frame, other text, text on or off, your own picture,
+    or back to the style's own."""
+    clip = db.get("clips", clip_id)
+    if not clip:
+        raise KeyError(clip_id)
+    g = clip.get("guard") or {}
+    t = dict(g.get("thumb") or {})
+    th = dict(t.get("settings") or styles.get(g.get("style_id"))["thumb"])
+    if reset:
+        th = dict(styles.get(g.get("style_id"))["thumb"])
+        src_text = clip.get("title") if th.get("source") == "title" else clip.get("hook")
+        t.update(custom=False, at=t.get("auto_at"), edited=False,
+                 text=src_text or clip.get("hook") or clip.get("title") or "")
+    if text is not None:
+        t.update(text=str(text).strip()[:120], edited=True)
+    if show_text is not None:
+        th["text"] = bool(show_text)
+    if first_frame is not None:
+        t["first_frame"] = bool(first_frame)
+    if at is not None:
+        t.update(at=max(0.0, float(at)), custom=False)
+    f = Path(clip["file"])
+    own = f.with_name(f.stem + "_own.jpg")
+    if image is not None:
+        shutil.copy(image, own)
+        t["custom"] = True
+    made = {"dur": media.probe(f)["duration"] or 3.0, "fx": {"punches": []}}
+    cover(f, Path(clip["thumb"] or f.with_suffix(".jpg")), made, th, t.get("text", ""),
+          at=None if t.get("at") is None and not t.get("custom") else (t.get("at") or 0.0),
+          image=own if t.get("custom") and own.exists() else None)
+    t["at"] = made["cover_at"] if not t.get("custom") else t.get("at")
+    t["settings"] = th
+    t.setdefault("first_frame", th.get("first_frame", True))
+    g["thumb"] = t
+    g["cover_at"] = t["at"] if not t.get("custom") else 0.0
+    _post_copy(clip).unlink(missing_ok=True)
+    return db.update("clips", clip_id, guard=g, thumb=str(Path(clip["thumb"] or f.with_suffix(".jpg"))))
+
+
+def _post_copy(clip: dict) -> Path:
+    f = Path(clip["file"])
+    return f.with_name(f.stem + "_post.mp4")
+
+
+def posting_file(clip: dict) -> tuple[Path, float]:
+    """What to upload to Instagram and TikTok, and where the cover is in it (seconds). Those two only take the
+    cover as a frame of the video, so when the thumbnail is designed (text or your own picture) and the clip
+    says so, it goes in as the first two frames (1/15 s) and the cover points there. Made once, then reused."""
+    f = Path(clip["file"])
+    g = clip.get("guard") or {}
+    t = g.get("thumb") or {}
+    full = cover_file(clip)
+    designed = t.get("custom") or ((t.get("settings") or {}).get("text") and t.get("text"))
+    if not (t.get("first_frame") and designed and full.exists()):
+        return f, float(g.get("cover_at") or 1.0)
+    out = _post_copy(clip)
+    if out.exists() and out.stat().st_mtime >= max(f.stat().st_mtime, full.stat().st_mtime):
+        return out, 0.0
+    tmp = out.with_name(out.stem + ".tmp.mp4")
+    p = subprocess.run([media.need("ffmpeg"), "-v", "error", "-y", "-i", str(f), "-loop", "1", "-framerate", "30",
+                        "-i", str(full), "-filter_complex",
+                        f"[1:v]scale={reframe.OUT_W}:{reframe.OUT_H},setsar=1,format=yuv420p[c];"
+                        "[0:v][c]overlay=0:0:enable='lt(t,0.066)':shortest=1,format=yuv420p[v]",
+                        "-map", "[v]", "-map", "0:a?", "-c:a", "copy", "-c:v", "libx264", "-preset", "veryfast",
+                        "-crf", "19", "-profile:v", "high", "-movflags", "+faststart", str(tmp)],
+                       capture_output=True, text=True)
+    if p.returncode != 0 or not tmp.exists():
+        tmp.unlink(missing_ok=True)
+        return f, float(g.get("cover_at") or 1.0)
+    shutil.move(str(tmp), out)
+    return out, 0.0
 
 
 def _edit_info(src: Path, c: dict, probe: dict, words: list[dict], credit: str, plan: dict) -> dict:
@@ -231,11 +340,24 @@ def rerender(clip_id: str, layout: str | None = None, start: float | None = None
     out = Path(clip["file"])
     tmp = out.with_name(out.stem + ".redo.mp4")
     look = styles.get(style_id if style_id is not None else g.get("style_id"))
+    tmp_clean = clean_of(tmp)
     made = produce(src, tmp, s0, s1, ed["w"], ed["h"], ed.get("has_audio", True), words, ed.get("hook", ""),
-                   ed.get("credit", ""), want, callout=g.get("callout", ""), look=look)
+                   ed.get("credit", ""), want, callout=g.get("callout", ""), look=look, clean=tmp_clean)
     shutil.move(str(tmp), out)
+    if tmp_clean.exists():
+        shutil.move(str(tmp_clean), clean_of(out))
     out.with_name(out.stem + "_tg.mp4").unlink(missing_ok=True)     # phone preview is stale now
-    cover(out, Path(clip["thumb"]), made)
+    _post_copy(clip).unlink(missing_ok=True)
+    t = dict(g.get("thumb") or {})
+    th = look["thumb"] if style_id is not None or not t.get("settings") else t["settings"]
+    if hook is not None and th.get("source") == "hook" and not t.get("edited"):
+        t["text"] = ed["hook"]
+    own = out.with_name(out.stem + "_own.jpg")
+    cover(out, Path(clip["thumb"]), made, th, t.get("text", ed.get("hook", "")),
+          image=own if t.get("custom") and own.exists() else None)
+    t.update(at=made.get("cover_at"), settings=th)
+    t.setdefault("first_frame", th.get("first_frame", True))
+    g["thumb"] = t
     ed["start"], ed["end"] = s0, s1
     g.update(edit=ed, layout=made["plan"].get("mode"), layout_choice=want, made=made["info"],
              style_id=look.get("id") or "", style_name=look.get("name") or "",

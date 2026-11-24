@@ -81,6 +81,23 @@ def caption_for(clip: dict, platform: str):
     return c
 
 
+def _with_thumbnail(clip: dict, platform: str) -> dict:
+    """The clip as a platform gets it: Instagram and TikTok take the cover as a frame of the video (the designed
+    thumbnail goes in as the first frames), YouTube takes the thumbnail picture itself."""
+    from .. import pipeline
+
+    if platform in ("instagram", "tiktok"):
+        f, at = pipeline.posting_file(clip)
+        return {**clip, "file": str(f), "guard": {**(clip.get("guard") or {}), "cover_at": at}}
+    if platform == "youtube":
+        t = (clip.get("guard") or {}).get("thumb") or {}
+        designed = t.get("custom") or ((t.get("settings") or {}).get("text") and t.get("text"))
+        full = pipeline.cover_file(clip)
+        if designed and full.exists():
+            return {**clip, "cover_file": str(full)}
+    return clip
+
+
 def post_one(p: dict) -> None:
     clip = db.get("clips", p["clip_id"])
     acc = db.get("accounts", p["account_id"])
@@ -93,7 +110,8 @@ def post_one(p: dict) -> None:
         return
     db.update("posts", p["id"], status="posting", tries=p["tries"] + 1)
     try:
-        rid, url = POSTERS[acc["platform"]](acc, clip, caption_for(clip, acc["platform"]))
+        rid, url = POSTERS[acc["platform"]](acc, _with_thumbnail(clip, acc["platform"]),
+                                            caption_for(clip, acc["platform"]))
         db.update("posts", p["id"], status="posted", remote_id=str(rid), remote_url=url or "", error="")
         db.update("clips", clip["id"], state="posted")
         db.log(f"Posted '{clip['title'][:60]}' to {acc['platform'].title()} ({acc['name']})", streamer_id=clip.get("streamer_id"))
