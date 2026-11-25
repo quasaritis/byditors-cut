@@ -150,12 +150,15 @@ def _groups(words: list[dict], size: int, ratio: float, per: int = 3, font: str 
 
 
 def _place(pref: float, t0: float, t1: float, half_h: float, half_w: float, faces: list, prev: float | None,
-           lo: int = SAFE_TOP, hi: int = SAFE_BOTTOM) -> int:
+           lo: int = SAFE_TOP, hi: int = SAFE_BOTTOM, cx: float = 540, pin: bool = False) -> int:
     """The y for a line of text shown from t0 to t1: as close to `pref` (and to where the last line was) as
-    possible without touching a face on screen at that time. Faces count from forehead to below the chin."""
+    possible without touching a face on screen at that time. Faces count from forehead to below the chin.
+    `pin`: placed by hand, so it stays exactly at `pref`."""
+    if pin:
+        return int(min(1920 - half_h - 20, max(half_h + 20, pref)))
     blocks = []
     for t, x0, y0, x1, y1 in faces:
-        if t0 - 0.3 <= t <= t1 + 0.3 and x1 > 540 - half_w - 20 and x0 < 540 + half_w + 20:
+        if t0 - 0.3 <= t <= t1 + 0.3 and x1 > cx - half_w - 20 and x0 < cx + half_w + 20:
             fh = y1 - y0
             blocks.append((y0 - 0.12 * fh, y1 + 0.3 * fh, y0 + 0.5 * fh))   # top, bottom (chin), mouth line
     lo_c, hi_c = int(lo + half_h), int(hi - half_h)
@@ -243,6 +246,8 @@ def build_ass(words: list[dict], start: float, end: float, hook: str, credit: st
         spots["cap"] = int(cs["y"] * 1920)
     if hs.get("y") is not None:
         spots["hook"] = int(hs["y"] * 1920)
+    cap_x = 540 if cs.get("x") is None else cs["x"] * 1080          # where the middle of a line sits
+    head_x = 540 if hs.get("x") is None else hs["x"] * 1080
     spoken_text = " ".join(w["w"] for w in words if start - 0.05 <= w["s"] < end)
     font = _script_font(spoken_text) or cs["font"]
     upper = cs["upper"] and font == cs["font"]
@@ -287,7 +292,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         hh = line_h * len(lines)
         hw = max(_width(ln, hook_size, hratio, hfont) for ln in lines) / 2
         pad_x, pad_y = (0.36 * hook_size * 0.5, 0.22 * hook_size * 0.5) if h_box else (0, 0)
-        hy = _place(spots["hook"], 0, hold, hh + pad_y, hw + pad_x, faces, None)
+        hx = round(min(1080 - hw - pad_x - 20, max(hw + pad_x + 20, head_x))) if hs["look"] != "banner" else 540
+        hy = _place(spots["hook"], 0, hold, hh + pad_y, hw + pad_x, faces, None, cx=hx, pin=hs.get("pin", False))
         fade_out = "\\fad(0,160)" if not hs["whole"] else ""
         if h_box:
             top, bottom = _box_v(hfont, hook_size, hupper)
@@ -298,21 +304,21 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             ink_bot = hy + (n - 1) * lh / 2 + bottom
             bw = (reframe.OUT_W if hs["look"] == "banner" else 2 * hw + 2 * pad_x)
             bh = ink_bot - ink_top + 2 * pad_y
-            ev.append(_box_event(2, 0, hold, 540, ink_top - pad_y, bw, bh, h_box,
+            ev.append(_box_event(2, 0, hold, hx, ink_top - pad_y, bw, bh, h_box,
                                  extra=f"\\fad(120,{0 if hs['whole'] else 160})",
                                  radius=0 if hs["look"] == "banner" else bh * 0.22 / max(1, n)))
             for i, ln in enumerate(lines):
                 ly = round(hy + (i - (n - 1) / 2) * lh)
                 ev.append(f"Dialogue: 2,{_ts(0)},{_ts(hold)},Hook,,0,0,0,,"
-                          f"{{\\an5\\pos(540,{ly})\\fad(120,{0 if hs['whole'] else 160})}}{ln}")
+                          f"{{\\an5\\pos({hx},{ly})\\fad(120,{0 if hs['whole'] else 160})}}{ln}")
         else:
             ev.append(f"Dialogue: 2,{_ts(0)},{_ts(hold)},Hook,,0,0,0,,"
-                      f"{{\\an5\\pos(540,{hy})\\blur0.6{fade_out}\\alpha&HFF&\\fscx70\\fscy70"
+                      f"{{\\an5\\pos({hx},{hy})\\blur0.6{fade_out}\\alpha&HFF&\\fscx70\\fscy70"
                       + (f"\\frz{h_tilt}" if h_tilt else "") +
                       f"\\t(0,80,\\alpha&H00&)\\t(0,120,0.5,\\fscx106\\fscy106)\\t(120,220,1.5,\\fscx100\\fscy100)}}"
                       + "\\N".join(lines))
         # captions keep clear of the hook while it is up (treated like one more face)
-        hook_box = [[t, int(540 - hw - pad_x), int(hy - hh - pad_y), int(540 + hw + pad_x), int(hy + hh + pad_y)]
+        hook_box = [[t, int(hx - hw - pad_x), int(hy - hh - pad_y), int(hx + hw + pad_x), int(hy + hh + pad_y)]
                     for t in [i * 0.5 for i in range(int(hold / 0.5) + 1)] + [hold]]
     prev = None
     # the source already has its own subtitles: ours on top would read twice and look broken
@@ -340,8 +346,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         total = sum(ws_px) + gap * (len(shown) - 1)
         fit = min(1.0, MAX_LINE_W / total) if total else 1.0     # one long word: shrink the line to fit
         g0 = times[0] - start
+        lx = min(1080 - total * fit / 2 - 20, max(total * fit / 2 + 20, cap_x))
         y = _place(spots["cap"], g0, g_end - start, half_h * fit, total * fit / 2,
-                   faces + (hook_box if g0 < hook_hold + 0.2 else []), prev)
+                   faces + (hook_box if g0 < hook_hold + 0.2 and not cs.get("pin") else []), prev,
+                   cx=lx, pin=cs.get("pin", False))
         prev = y
         lit_c = lit_main
         if cs["lit"] == "#FFE100":     # the default yellow: a second speaker gets blue
@@ -350,7 +358,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     lit_c = HIGHLIGHT_B if who == "b" else HIGHLIGHT
                     break
         # every word has its own spot, so a word can pop without nudging its neighbours
-        xs, cx = [], 540 - total * fit / 2
+        xs, cx = [], lx - total * fit / 2
         for wpx in ws_px:
             xs.append(round(cx + wpx * fit / 2))
             cx += (wpx + gap) * fit
@@ -358,7 +366,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         out_fade_any = nxt - g_end > 0.25
         if cs["box"] == "line":
             pad = 0.22 * size * fit
-            ev.append(_box_event(0, g0, g_end - start, 540, y + btop * fit - pad, total * fit + 2.4 * pad,
+            ev.append(_box_event(0, g0, g_end - start, lx, y + btop * fit - pad, total * fit + 2.4 * pad,
                                  (bbot - btop) * fit + 2 * pad, cs["box_color"], alpha=0x18,
                                  extra="\\fad(80,90)" if out_fade_any else "\\fad(80,0)"))
         for k in range(len(shown)):

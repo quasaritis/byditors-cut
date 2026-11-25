@@ -407,9 +407,26 @@ def clip_edit(cid: str, b: dict = Depends(_body)):
     try:
         return _clip_public(pipeline.rerender(cid, layout=b.get("layout") or None, start=num("start"), end=num("end"),
                                               hook=b.get("hook"), title=b.get("title"),
-                                              style_id=_style_id(b.get("style_id")) or None))
+                                              style_id=_style_id(b.get("style_id")) or None,
+                                              over=b["over"] if isinstance(b.get("over"), dict) else None))
     except (RuntimeError, ValueError) as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/clips/{cid}/look")
+def clip_look(cid: str, style_id: str = ""):
+    """What the on-clip editor needs: the clip's style with its own changes, and a frame of its video."""
+    c = _need("clips", cid)
+    g = c.get("guard") or {}
+    ed = g.get("edit") or {}
+    base = styles.get(_style_id(style_id) or g.get("style_id"))
+    mid = (float(ed.get("start", 0)) + float(ed.get("end", 0))) / 2
+    words = [w for w in ed.get("words") or [] if mid - 1 <= w["s"] <= mid + 3][:6]
+    return {"style": base, "over": g.get("look_over") or {},
+            "sample": {"clip_id": c["id"], "w": ed.get("w"), "h": ed.get("h"), "at": round(mid, 2),
+                       "hook": ed.get("hook", ""), "words": [w["w"] for w in words], "title": c.get("title", ""),
+                       "cams": (g.get("made") or {}).get("cams") or [], "start": ed.get("start"), "end": ed.get("end")},
+            "can_render": bool(ed.get("src")) and Path(ed["src"]).exists()}
 
 
 @app.get("/media/source/{cid}.mp4")
@@ -634,15 +651,23 @@ def style_sample():
 
 
 @app.get("/media/style-frame.jpg")
-def style_frame(at: float = -1):
-    """A still from the sample clip's original video (wide), for drawing the cam box and the part to show."""
-    got = _sample_clip()
-    if not got:
-        raise HTTPException(404, "No video yet")
-    ed = got["edit"]
+def style_frame(at: float = -1, c: str = ""):
+    """A still from a clip's original video (wide): the sample clip's, or clip `c`'s (the on-clip editor)."""
+    one = db.get("clips", c) if c else None
+    ed = ((one.get("guard") or {}).get("edit") or {}) if one else {}
+    if not (ed.get("src") and Path(ed["src"]).exists()):
+        got = _sample_clip()
+        if not got:
+            raise HTTPException(404, "No video yet")
+        ed = got["edit"]
     t = at if at >= 0 else (float(ed["start"]) + float(ed["end"])) / 2
-    out = config.DATA / "tmp" / "style_frame.jpg"
+    out = config.DATA / "tmp" / f"style_frame_{abs(hash((ed['src'], round(t, 1)))) % 10**8}.jpg"
     out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        return FileResponse(out, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    for old in out.parent.glob("style_frame_*.jpg"):
+        if time.time() - old.stat().st_mtime > 3600:
+            old.unlink(missing_ok=True)
     subprocess.run([media.need("ffmpeg"), "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", ed["src"], "-frames:v", "1",
                     "-vf", "scale=960:-2", "-q:v", "4", str(out)], check=False, timeout=60)
     if not out.exists():

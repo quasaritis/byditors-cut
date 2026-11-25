@@ -251,6 +251,10 @@ tr.click:hover td{background:#151515}
 
 /* ---------- clip thumbnail ---------- */
 .thumbed{display:grid;grid-template-columns:132px minmax(0,1fr);gap:16px;align-items:start}
+.looked{display:grid;grid-template-columns:minmax(180px,240px) minmax(0,1fr);gap:18px;align-items:start}
+.lkvals{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;font-size:13px}
+.lkvals dt{color:var(--muted)}.lkvals dd{margin:0;font-variant-numeric:tabular-nums}
+@media (max-width:860px){.looked{grid-template-columns:150px minmax(0,1fr)}}
 .tframe{position:relative;aspect-ratio:9/16;border-radius:10px;overflow:hidden;background:#0d0d0d;box-shadow:inset 0 0 0 1px #222}
 .tframe img,.tframe video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 @media (max-width:860px){.thumbed{grid-template-columns:110px minmax(0,1fr)}}
@@ -273,6 +277,14 @@ tr.click:hover td{background:#151515}
 .phone .t.drag::after{content:"";position:absolute;inset:-6px -10px;border:1.5px dashed transparent;border-radius:8px;transition:border-color .15s ease}
 .phone:hover .t.drag::after{border-color:rgba(255,255,255,.45)}
 .phone .t .w{display:inline-block;position:relative;margin:0 .07em}
+.phone .t .rz{position:absolute;right:-14px;bottom:-14px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #ff6a1a,0 2px 6px rgba(0,0,0,.5);cursor:nwse-resize;touch-action:none;opacity:0;transition:opacity .15s ease}
+.phone:hover .t .rz,.phone .t .rz:active{opacity:1}
+@media (hover:none){.phone .t .rz{opacity:1}}
+.phone .t[data-size]::before{content:attr(data-size);position:absolute;left:50%;bottom:calc(100% + 22px);transform:translateX(-50%);font:600 11px/1 "Inter";color:#fff;background:#111;padding:4px 7px;border-radius:6px;-webkit-text-stroke:0;text-shadow:none}
+.phone .vguide,.phone .hguide{position:absolute;pointer-events:none;opacity:0;transition:opacity .1s ease;background:#ff6a1a}
+.phone .vguide{left:50%;top:0;bottom:0;width:1px}
+.phone .hguide{left:0;right:0;height:1px;top:68%}
+.phone .vguide.on,.phone .hguide.on{opacity:.9}
 .phone .t .w i{position:absolute;z-index:-1;inset:-.08em -.14em;border-radius:.2em}
 .phone .tag{position:absolute;font:600 10px/1 "Inter";padding:3px 6px;border-radius:5px;background:#ff6a1a;color:#fff;transform:translate(-50%,-100%);left:50%;top:-6px;opacity:0;transition:opacity .15s ease;pointer-events:none}
 .phone:hover .tag{opacity:1}
@@ -550,6 +562,13 @@ async function showClip(id) {
         ${plats.map((p,i) => { const v = caps[p]; const text = typeof v === "object" ? `${v.title}\n\n${v.description}` : v; return `<textarea class="field" data-cap="${p}" aria-label="${PLAT[p]} caption" ${i ? "hidden" : ""} rows="6">${esc(text)}</textarea>`; }).join("")}
         <div class="acts" style="margin-top:12px"><button class="btn sm" id="savecap">Save text</button></div>
       </section>
+      ${c.can_relayout ? `<section class="card" aria-labelledby="h-look"><header><h2 id="h-look">Captions and heading</h2><span class="faint" id="lk-state"></span></header>
+        <div class="looked"><div class="lkphone" id="lkphone"><div class="phone" style="container-type:inline-size"><div class="ph-ph">Loading…</div></div></div>
+          <div class="tctl"><p class="muted" style="margin:0 0 12px">Drag the captions or the heading to put them anywhere. Drag the round handle on the corner to make them bigger or smaller.</p>
+            <dl class="lkvals" id="lkvals"></dl>
+            <label class="f" for="lk-at" style="margin-top:10px">Frame to line it up on</label><input type="range" id="lk-at" min="0" max="1" step="0.1" value="0.5" style="width:100%;accent-color:var(--accent,#e5a93b)">
+            <div class="acts" style="margin-top:12px"><button class="btn primary sm" type="button" id="lk-go" disabled>Render with these changes</button><button class="btn ghost sm" type="button" id="lk-reset">Back to the style's</button></div>
+            <p class="hint">About a minute. The cut, zooms and sounds stay as they are. Positions you set stay put, even over a face.</p></div></div></section>` : ""}
       <section class="card" aria-labelledby="h-thumb"><header><h2 id="h-thumb">Thumbnail</h2><span class="faint">${th.custom ? "Your own picture" : "Made from the clip"}</span></header>
         <div class="thumbed"><div class="tframe"><img id="tcover" src="/media/cover/${c.id}.jpg?v=${S.bust || 0}" alt="The clip's thumbnail"><video id="tvid" src="/media/clean/${c.id}.mp4" muted playsinline preload="metadata" hidden></video></div>
           <div class="tctl">
@@ -587,6 +606,7 @@ async function showClip(id) {
   }, now ? "Posting in a few seconds" : "Scheduled in the post queue");
   $("#approve").onclick = send(false); $("#postnow").onclick = send(true);
   if ($("#strip")) $("#strip").onclick = e => act(e.currentTarget, async () => { await api(`/api/clips/${id}/strip-music`, {method: "POST"}); showClip(id); }, "Music handled and checked again");
+  if ($("#lkphone")) clipLook(c, box);
   if ($("#relay")) {
     const w = c.window, sv = $("#srcv"), ts = $("#t-s"), te = $("#t-e");
     const draw = () => { if (+ts.value > +te.value - 3) ts.value = Math.max(0, +te.value - 3);
@@ -885,6 +905,39 @@ async function viewCampaigns() {
   };
 }
 
+/* ---------------- Inbox: move and resize one clip's captions and heading ---------------- */
+async function clipLook(c, box) {
+  let L;
+  try { await styleData(); L = await api(`/api/clips/${c.id}/look${$("#cstyle") ? `?style_id=${encodeURIComponent($("#cstyle").value)}` : ""}`); }
+  catch (e) { $("#lkphone").innerHTML = `<p class="muted">${esc(e.message)}</p>`; return; }
+  const over = JSON.parse(JSON.stringify(L.over || {})), smp = {...L.sample};
+  const saved = JSON.stringify(over);
+  const merged = () => { const st = JSON.parse(JSON.stringify(L.style));
+    for (const g of ["captions", "heading"]) Object.assign(st[g], over[g] || {}); return st; };
+  const at = $("#lk-at"), s0 = +(smp.start ?? smp.at), s1 = +(smp.end ?? smp.at);
+  at.min = s0.toFixed(1); at.max = Math.max(s0 + 0.1, s1).toFixed(1); at.value = (+smp.at).toFixed(1);
+  const vals = () => { const st = merged(), f = (g, n) => st[g].show
+      ? `<dt>${n}</dt><dd>${st[g].size}% · ${over[g]?.y != null ? `placed by you` : "placed by the style"}</dd>` : `<dt>${n}</dt><dd>off in this style</dd>`;
+    $("#lkvals").innerHTML = f("captions", "Captions") + f("heading", "Heading");
+    const dirty = JSON.stringify(over) !== saved;
+    $("#lk-go").disabled = !dirty || !L.can_render;
+    $("#lk-state").textContent = !L.can_render ? "Original video is gone, so it can't render again" : dirty ? "Not rendered yet" : Object.keys(over).length ? "Your own placement" : "As the style places them"; };
+  const draw = () => {
+    const st = merged(); $("#lkphone").innerHTML = phoneHTML(st, smp, true, "clip");
+    wirePhone($("#lkphone .phone"), st, smp, kind => {
+      if (kind === "captions" || kind === "heading") over[kind] = {...(over[kind] || {}), x: st[kind].x, y: st[kind].y, size: st[kind].size};
+      draw();
+    });
+    vals();
+  };
+  at.oninput = () => { smp.at = +at.value; draw(); };
+  $("#lk-reset").onclick = () => { for (const k of Object.keys(over)) delete over[k]; draw(); };
+  $("#lk-go").onclick = e => act(e.currentTarget, async () => {
+    await api(`/api/clips/${c.id}/edit`, {method: "POST", body: {over}}); S.bust = Date.now(); showClip(c.id); }, "Rendered with your changes");
+  if ($("#cstyle")) $("#cstyle").addEventListener("change", async () => { try { L.style = (await api(`/api/clips/${c.id}/look?style_id=${encodeURIComponent($("#cstyle").value)}`)).style; draw(); } catch (e) {} });
+  draw();
+}
+
 /* ---------------- Styles: how clips look ---------------- */
 let SD = null, SAMPLE, ED = null;
 const fontsIn = new Set();
@@ -980,7 +1033,8 @@ function phoneHTML(st, smp, edit = false, mode = "clip") {
     if (plan.cam && hs.y == null) { const o = plan.cam.out; if (y > o[1] - 90 && y < o[1] + o[3] + 90) y = o[1] < 700 ? o[1] + o[3] + 110 : o[1] - 110; }   // keeps off the cam box, like the render
     const ol = Math.max(5, Math.round(f.ass / 15)) * outl;
     const boxCss = box ? `background:${box};padding:${U(f.css * 0.22)} ${U(f.css * 0.34)};border-radius:${hs.look === "banner" ? 0 : U(f.css * 0.3)};${hs.look === "banner" ? `width:${U(1080)};box-sizing:border-box;` : ""}` : "";
-    h += `<div class="t${edit ? " drag" : ""}" data-drag="heading" style="top:${pc(y, 1920)};font:${U(f.css)}/1.08 ${ff(hs.font)};${textCSS(ink, box ? 0 : ol, shad)};${boxCss}white-space:normal;width:max-content;max-width:${U(hs.look === "banner" ? 1080 : 900)};${tilt ? `transform:translate(-50%,-50%) rotate(${tilt}deg);` : ""}">${edit ? `<span class="tag">Heading</span>` : ""}${esc(txt)}</div>`;
+    const hx = hs.look === "banner" || hs.x == null ? 540 : hs.x * 1080;
+    h += `<div class="t${edit ? " drag" : ""}" data-drag="heading" data-tilt="${tilt || 0}" style="left:${pc(hx, 1080)};top:${pc(y, 1920)};font:${U(f.css)}/1.08 ${ff(hs.font)};${textCSS(ink, box ? 0 : ol, shad)};${boxCss}white-space:normal;width:max-content;max-width:${U(hs.look === "banner" ? 1080 : 900)};${tilt ? `transform:translate(-50%,-50%) rotate(${tilt}deg);` : ""}">${edit ? `<span class="tag">Heading</span><b class="rz" data-rz="heading" title="Drag to resize"></b>` : ""}${esc(txt)}</div>`;
   }
   if (cs.show) {
     const f = fontPx(cs.font, cs.size), words = (smp?.words?.length ? smp.words : ["he", "actually", "did", "that!"]).slice(0, cs.words);
@@ -990,8 +1044,10 @@ function phoneHTML(st, smp, edit = false, mode = "clip") {
       const c = i === lit ? cs.lit : (isKey(w) && cs.key !== cs.text ? cs.key : cs.text);
       return `<span class="w" style="color:${c};${i === lit ? `transform:scale(${grow})` : ""}">${i === lit && cs.box === "word" ? `<i style="background:${cs.box_color}"></i>` : ""}${esc(t)}</span>`; }).join(" ");
     const lineBox = cs.box === "line" ? `background:${cs.box_color}e6;padding:${U(f.css * 0.22)} ${U(f.css * 0.3)};border-radius:${U(f.css * 0.28)};` : "";
-    h += `<div class="t${edit ? " drag" : ""}" data-drag="captions" style="top:${pc(y, 1920)};font:${U(f.css)}/1 ${ff(cs.font)};${textCSS(cs.text, ol, sh)};${lineBox}">${edit ? `<span class="tag">Captions</span>` : ""}${ws}</div>`;
+    const cx = cs.x == null ? 540 : cs.x * 1080;
+    h += `<div class="t${edit ? " drag" : ""}" data-drag="captions" style="left:${pc(cx, 1080)};top:${pc(y, 1920)};font:${U(f.css)}/1 ${ff(cs.font)};${textCSS(cs.text, ol, sh)};${lineBox}">${edit ? `<span class="tag">Captions</span><b class="rz" data-rz="captions" title="Drag to resize"></b>` : ""}${ws}</div>`;
   }
+  if (edit) h += `<i class="vguide" aria-hidden="true"></i><i class="hguide" aria-hidden="true"></i>`;
   return `<div class="phone" style="container-type:inline-size">${h}</div>`;
 }
 
@@ -1043,26 +1099,54 @@ function styleEditor(id) {
   if ($("#sdel")) $("#sdel").onclick = e => act(e.currentTarget, async () => { await api(`/api/styles/${id}`, {method: "DELETE"}); await styleData(true); ED = null; refreshPickers(); location.hash = "#styles"; }, "Style deleted");
 }
 function changed(redrawPanel = false) { ED.dirty = true; drawPhone(); if (redrawPanel) drawPanel(); }
+/* move the captions and heading anywhere (they snap to the middle), resize them from the round handle,
+   and move the cam box. `st` is changed in place; `done(kind)` runs when a drag ends. */
+const SIZE_RANGE = {captions: [40, 180], heading: [40, 160]};
+function wirePhone(ph, st, smp, done) {
+  const r3 = v => Math.round(v * 1000) / 1000;
+  const vg = ph.querySelector(".vguide"), hg = ph.querySelector(".hguide");
+  ph.querySelectorAll("[data-rz]").forEach(hd => hd.onpointerdown = e => {
+    if (e.button !== 0) return; e.preventDefault(); e.stopPropagation();
+    const el = hd.closest(".t"), kind = hd.dataset.rz, g = st[kind]; hd.setPointerCapture(e.pointerId);
+    const b = el.getBoundingClientRect(), mx = b.left + b.width / 2, my = b.top + b.height / 2;
+    const d0 = Math.max(8, Math.hypot(e.clientX - mx, e.clientY - my)), s0 = g.size, [lo, hi] = SIZE_RANGE[kind], tilt = +(el.dataset.tilt || 0);
+    hd.onpointermove = m => {
+      const k = Math.hypot(m.clientX - mx, m.clientY - my) / d0, size = Math.round(Math.min(hi, Math.max(lo, s0 * k)));
+      g.size = size; el.style.transform = `translate(-50%,-50%) scale(${size / s0})${tilt ? ` rotate(${tilt}deg)` : ""}`;
+      el.dataset.size = `${size}%`;
+    };
+    hd.onpointerup = () => { hd.onpointermove = null; done(kind); };
+  });
+  ph.querySelectorAll("[data-drag]").forEach(el => el.onpointerdown = e => {
+    if (e.button !== 0 || e.target.closest("[data-rz]")) return; e.preventDefault(); el.setPointerCapture(e.pointerId);
+    const r = ph.getBoundingClientRect(), kind = el.dataset.drag, L = st.layout;
+    const b = el.getBoundingClientRect();
+    const start = {x: e.clientX, y: e.clientY, cx: L.corner.x, cy: L.corner.y,
+      ex: (b.left + b.width / 2 - r.left) / r.width, ey: (b.top + b.height / 2 - r.top) / r.height};
+    el.onpointermove = m => {
+      if (kind === "corner") {
+        L.corner.x = r3(Math.min(0.9, Math.max(0, start.cx + (m.clientX - start.x) / r.width)));
+        L.corner.y = r3(Math.min(0.9, Math.max(0, start.cy + (m.clientY - start.y) / r.height)));
+        const o = phonePlan(st, smp).cam.out; el.style.left = pc(o[0], 1080); el.style.top = pc(o[1], 1920);
+        return;
+      }
+      let x = start.ex + (m.clientX - start.x) / r.width, y = start.ey + (m.clientY - start.y) / r.height;
+      const half = b.width / 2 / r.width;
+      x = Math.min(Math.max(0.1, 1 - half - 0.02), Math.max(Math.min(0.9, half + 0.02), x));
+      y = Math.min(0.92, Math.max(0.08, y));
+      const snapX = Math.abs(x - 0.5) < 0.025, snapY = kind === "captions" && Math.abs(y - 0.68) < 0.012;
+      if (snapX) x = 0.5; if (snapY) y = 0.68;
+      if (vg) vg.classList.toggle("on", snapX); if (hg) { hg.classList.toggle("on", snapY); hg.style.top = "68%"; }
+      st[kind].x = r3(x); st[kind].y = r3(y);
+      el.style.left = `${(x * 100).toFixed(2)}%`; el.style.top = `${(y * 100).toFixed(2)}%`;
+    };
+    el.onpointerup = () => { el.onpointermove = null; vg?.classList.remove("on"); hg?.classList.remove("on"); done(kind); };
+  });
+}
 function drawPhone() {
   const box = $("#phone"); if (!box) return;
   box.innerHTML = phoneHTML(ED.st, SAMPLE, ED.tab !== "thumb", ED.tab === "thumb" ? "thumb" : "clip");
-  const ph = box.querySelector(".phone");
-  ph.querySelectorAll("[data-drag]").forEach(el => el.onpointerdown = e => {
-    if (e.button !== 0) return; e.preventDefault(); el.setPointerCapture(e.pointerId);
-    const r = ph.getBoundingClientRect(), kind = el.dataset.drag, L = ED.st.layout;
-    const start = {x: e.clientX, y: e.clientY, cx: L.corner.x, cy: L.corner.y};
-    el.onpointermove = m => {
-      if (kind === "corner") {
-        L.corner.x = Math.round(Math.min(0.9, Math.max(0, start.cx + (m.clientX - start.x) / r.width)) * 1000) / 1000;
-        L.corner.y = Math.round(Math.min(0.9, Math.max(0, start.cy + (m.clientY - start.y) / r.height)) * 1000) / 1000;
-        const o = phonePlan(ED.st, SAMPLE).cam.out; el.style.left = pc(o[0], 1080); el.style.top = pc(o[1], 1920);
-      } else {
-        const y = Math.min(0.92, Math.max(0.08, (m.clientY - r.top) / r.height));
-        ED.st[kind].y = Math.round(y * 1000) / 1000; el.style.top = `${(y * 100).toFixed(2)}%`;
-      }
-    };
-    el.onpointerup = () => { el.onpointermove = null; ED.dirty = true; drawPhone(); if (ED.tab !== "layout" || kind === "corner") drawPanel(); };
-  });
+  wirePhone(box.querySelector(".phone"), ED.st, SAMPLE, kind => { ED.dirty = true; drawPhone(); if (ED.tab !== "layout" || kind === "corner") drawPanel(); });
 }
 const tog = (key, label, on, hint = "") => `<div class="swrow"><div><b>${label}</b>${hint ? `<p>${hint}</p>` : ""}</div><span class="tog"><input type="checkbox" data-tog="${key}" aria-label="${label}" ${on ? "checked" : ""}><span></span></span></div>`;
 const slider = (key, label, min, max, val, unit = "") => `<div class="srow"><label for="sl-${key.replace(".", "-")}">${label}</label><input type="range" id="sl-${key.replace(".", "-")}" data-sl="${key}" min="${min}" max="${max}" step="1" value="${val}"><output>${val}${unit}</output></div>`;

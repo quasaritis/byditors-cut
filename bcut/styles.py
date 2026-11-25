@@ -70,9 +70,10 @@ CAPTION_PRESETS = {
 
 DEFAULT = {
     "captions": {"show": True, "preset": "classic", **{k: v for k, v in CAPTION_PRESETS["classic"].items()
-                                                         if k != "label"}, "y": None},
+                                                         if k != "label"}, "y": None, "x": None,
+                 "pin": False},
     "heading": {"show": True, "look": "outline", "font": "Anton", "size": 100, "upper": True, "y": None,
-                "whole": False},
+                "x": None, "pin": False, "whole": False},
     "thumb": {"text": True, "source": "hook", "look": "white", "font": "Poppins Black", "size": 100, "upper": False,
               "spot": "middle", "frame": "reaction", "punch": True, "first_frame": True},
     "layout": {"framing": "smart", "cam": "top", "cam_find": "ai", "cam_box": None,
@@ -175,6 +176,9 @@ def clean(s: dict | None) -> dict:
         "outline": round(_num(c_in.get("outline"), 0, 250, dc["outline"])),
         "shadow": round(_num(c_in.get("shadow"), 0, 250, dc["shadow"])),
         "y": None if c_in.get("y") in (None, "") else round(_num(c_in.get("y"), 0.08, 0.92, 0.68), 3),
+        "x": None if c_in.get("x") in (None, "") else round(_num(c_in.get("x"), 0.1, 0.9, 0.5), 3),
+        # placed by hand on one clip: stays exactly there (no moving away from faces)
+        "pin": bool(c_in.get("pin", False)),
     }
     for k in ("text", "lit", "key", "box_color"):
         cap[k] = _color(c_in.get(k), dc[k])
@@ -187,6 +191,8 @@ def clean(s: dict | None) -> dict:
         "upper": bool(h_in.get("upper", dh["upper"])),
         "whole": bool(h_in.get("whole", dh["whole"])),
         "y": None if h_in.get("y") in (None, "") else round(_num(h_in.get("y"), 0.06, 0.9, 0.17), 3),
+        "x": None if h_in.get("x") in (None, "") else round(_num(h_in.get("x"), 0.1, 0.9, 0.5), 3),
+        "pin": bool(h_in.get("pin", False)),
     }
     thumb = {
         "text": bool(t_in.get("text", dt["text"])),
@@ -305,3 +311,32 @@ def options() -> dict:
     return {"fonts": FONTS, "anims": ANIMS, "boxes": BOXES, "framings": FRAMINGS, "cams": CAM_SPOTS,
             "heads": HEAD_LOOKS, "thumb_frames": THUMB_FRAMES, "thumb_spots": THUMB_SPOTS, "thumb_text": THUMB_TEXT,
             "presets": {k: {kk: vv for kk, vv in v.items()} for k, v in CAPTION_PRESETS.items()}}
+
+
+OVER_KEYS = {"captions": ("x", "y", "size", "pin", "show"), "heading": ("x", "y", "size", "pin", "show")}
+
+
+def clean_over(o: dict | None) -> dict:
+    """One clip's own changes on top of its style (moved or resized captions and heading)."""
+    out: dict = {}
+    for g, keys in OVER_KEYS.items():
+        src = (o or {}).get(g)
+        if isinstance(src, dict):
+            got = {k: src[k] for k in keys if k in src}
+            if got:
+                out[g] = got
+    return out
+
+
+def with_over(style: dict, over: dict | None) -> dict:
+    """The style with one clip's own changes applied; positions set by hand are pinned."""
+    o = clean_over(over)
+    if not o:
+        return style
+    s = copy.deepcopy(style)
+    for g, ch in o.items():
+        s[g] = {**s.get(g, {}), **ch}
+        if "y" in ch and ch["y"] is not None:
+            s[g]["pin"] = True
+    keep = {k: style[k] for k in ("id", "name") if k in style}
+    return {**clean(s), **keep}

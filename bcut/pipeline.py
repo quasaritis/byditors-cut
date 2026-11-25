@@ -313,8 +313,10 @@ def _edit_info(src: Path, c: dict, probe: dict, words: list[dict], credit: str, 
 
 
 def rerender(clip_id: str, layout: str | None = None, start: float | None = None, end: float | None = None,
-             hook: str | None = None, title: str | None = None, style_id: str | None = None) -> dict:
-    """Render a clip again: in another layout or style, with a new start/end, or a new hook (Inbox → Edit)."""
+             hook: str | None = None, title: str | None = None, style_id: str | None = None,
+             over: dict | None = None) -> dict:
+    """Render a clip again: in another layout or style, with a new start/end, a new hook, or captions and heading
+    moved and resized by hand (`over`, kept for later renders; {} puts them back to the style's)."""
     clip = db.get("clips", clip_id)
     if not clip:
         raise RuntimeError("Clip not found")
@@ -339,7 +341,9 @@ def rerender(clip_id: str, layout: str | None = None, start: float | None = None
     words = [w for w in (ed.get("words") or []) if s0 - 0.05 <= w["s"] <= s1 + 0.05]
     out = Path(clip["file"])
     tmp = out.with_name(out.stem + ".redo.mp4")
-    look = styles.get(style_id if style_id is not None else g.get("style_id"))
+    if over is not None:
+        g["look_over"] = styles.clean_over(over)
+    look = styles.with_over(styles.get(style_id if style_id is not None else g.get("style_id")), g.get("look_over"))
     tmp_clean = clean_of(tmp)
     made = produce(src, tmp, s0, s1, ed["w"], ed["h"], ed.get("has_audio", True), words, ed.get("hook", ""),
                    ed.get("credit", ""), want, callout=g.get("callout", ""), look=look, clean=tmp_clean)

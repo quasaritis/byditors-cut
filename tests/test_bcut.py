@@ -1065,3 +1065,40 @@ def test_thumbnails_are_made_changed_and_posted(tmp_path, client, monkeypatch):
     r = client.post(f"/api/clips/{clip['id']}/thumbnail", json={"reset": True, "first_frame": False})
     assert not r.json()["guard"]["thumb"]["custom"] and r.json()["guard"]["thumb"]["text"] == "He did it"
     assert publish._with_thumbnail(db.get("clips", clip["id"]), "tiktok")["file"] == str(f)
+
+
+def test_captions_and_heading_moved_and_resized_by_hand_stay_put():
+    from bcut import render, styles
+    base = styles.get(None)
+    over = {"captions": {"x": 0.3, "y": 0.4, "size": 140}, "heading": {"x": 0.7, "y": 0.15, "size": 80},
+            "layout": {"framing": "fill"}}
+    st = styles.with_over(base, over)
+    assert st["captions"]["pin"] and st["captions"]["size"] == 140 and st["heading"]["x"] == 0.7
+    assert st["layout"] == base["layout"] and styles.clean_over(over).keys() == {"captions", "heading"}
+    ws = [{"w": w, "s": 0.3 + i * 0.3, "e": 0.55 + i * 0.3} for i, w in enumerate(["so", "he", "ran"])]
+    face = [[t / 2, 200, 700, 500, 1000] for t in range(8)]        # a face right where the captions were put
+    ass = render.build_ass(ws, 0, 3, "Big moment here", "", {"faces_out": face, "mode": "center"}, style=st)
+    caps = [ln for ln in ass.splitlines() if ln.startswith("Dialogue: 1,")]
+    ys = {int(re.search(r"\\(?:pos|move)\(\d+,(\d+)", ln).group(1)) for ln in caps}
+    assert min(ys) <= 0.4 * 1920 + 20 and max(ys) >= 0.4 * 1920       # exactly where it was put, face or not
+    xs = [int(re.search(r"\\(?:pos|move)\((\d+),", ln).group(1)) for ln in caps]
+    assert 200 < sum(xs) / len(xs) < 450                               # left of the middle, as placed
+    hook = [ln for ln in ass.splitlines() if ",Hook," in ln][0]
+    assert int(re.search(r"\\pos\((\d+),", hook).group(1)) > 600
+    plain = render.build_ass(ws, 0, 3, "", "", {"faces_out": face, "mode": "center"}, style=base)
+    assert "\\pos(540" in plain or "\\move(5" in plain                  # untouched clips: centred as before
+
+
+def test_render_again_keeps_the_hand_placed_captions(tmp_path):
+    src = _talky(tmp_path)
+    pr = probe(src)
+    clip = pipeline.make_clip({"id": "jlook", "streamer_id": None, "url": ""}, src, pr,
+                              {"title": "t", "uploaded_by_you": True},
+                              {"start": 2.0, "end": 14.0, "score": 60, "hook": "Hook", "title": "T", "why": ""},
+                              _talk_words(), None, [])
+    out = pipeline.rerender(clip["id"], over={"captions": {"x": 0.35, "y": 0.3, "size": 130}})
+    assert out["guard"]["look_over"]["captions"]["size"] == 130
+    again = pipeline.rerender(clip["id"], start=3.0)                 # a trim later keeps the placement
+    assert again["guard"]["look_over"]["captions"]["x"] == 0.35
+    back = pipeline.rerender(clip["id"], over={})
+    assert back["guard"]["look_over"] == {}
