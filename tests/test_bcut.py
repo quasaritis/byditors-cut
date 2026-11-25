@@ -1119,3 +1119,60 @@ def test_removing_an_account_cancels_its_waiting_posts(client):
     assert db.get("accounts", "a_rm") is None
     assert db.get("posts", "prm1")["status"] == "cancelled" and db.get("posts", "prm2")["status"] == "posted"
     assert db.get("streamers", "s_rm")["post_to"] == ["a_keep"]
+
+
+def test_ai_picking_fits_free_groq_and_splits_what_is_too_big(monkeypatch):
+    from bcut import ai, brain
+    db.kv_set("ai", {"provider": "groq", "model": "openai/gpt-oss-120b", "key": "k"})
+    words, t = [], 0.0
+    for i in range(3000):                                   # ~25 minutes of talking
+        words.append({"w": f"word{i % 50}", "s": round(t, 2), "e": round(t + 0.3, 2)})
+        t += 0.5 if i % 9 else 1.2
+    sizes, calls = [], {"n": 0}
+
+    def fake(system, user, max_tokens=2500, temperature=0.4):
+        calls["n"] += 1
+        sizes.append(ai.tokens(system + user) + max_tokens)
+        if calls["n"] == 1:
+            raise ai.TooLarge("Request too large")             # the first piece is split in two and retried
+        return {"clips": [{"start": 60, "end": 90, "score": 70, "hook": "He did WHAT", "title": "t"}]}
+    monkeypatch.setattr(ai, "ask_json", fake)
+    sig = {"excite": np.zeros(0)}
+    got = brain.by_ai(words, sig, t, "title", "who", 3, 15, 45, log=lambda *a: None)
+    assert got and got[0]["hook"] == "He did WHAT"
+    assert max(sizes) <= ai.BUDGET["groq"] and calls["n"] >= 4
+    db.kv_set("ai", {})
+
+
+def test_cam_found_once_is_remembered_for_the_same_video(tmp_path):
+    from bcut import reframe
+    src = tmp_path / "sources" / "jx" / "source.mp4"
+    src.parent.mkdir(parents=True)
+    reframe._remember_cams(src, [{"box": (0.8, 0.4, 0.17, 0.23), "face": (0.88, 0.5)}])
+    dets = [[(0.85, 0.45, 0.05, 0.08)]] * 8 + [[]] * 2
+    got = reframe._remembered_cams(src, dets)
+    assert got and got[0]["box"] == (0.8, 0.4, 0.17, 0.23)
+    assert not reframe._remembered_cams(src, [[]] * 10)            # nobody in the box now: not reused
+    assert not reframe._remembered_cams(tmp_path / "other" / "x.mp4", dets)
+
+
+def test_picture_keeps_moving_between_punch_ins():
+    from bcut import fx
+    f = fx.zoom_filter([], lambda t: (0.5, 0.4), dur=30, drift=0.05)
+    assert "0.050*min(t/30.00,1)" in f and "crop=1080:1920" in f
+    assert fx.zoom_filter([], lambda t: (0.5, 0.4)) == ""
+
+
+def test_post_for_a_deleted_clip_file_is_cancelled_not_failed(tmp_path):
+    from bcut import publish
+    acc = db.insert("accounts", {"id": db.new_id("a"), "platform": "instagram", "name": "ig", "secrets": {},
+                                 "settings": {}, "created": 1})
+    c = db.insert("clips", {"id": db.new_id("c"), "job_id": "jt", "title": "gone", "start": 0, "end": 10,
+                            "file": str(tmp_path / "missing.mp4"), "guard": {"auto_post_allowed": True},
+                            "verdict": "pass", "state": "new", "created": 1})
+    p = db.insert("posts", {"id": db.new_id("p"), "clip_id": c["id"], "account_id": acc["id"],
+                            "status": "scheduled", "due": 1, "created": 1, "updated": 1})
+    publish.post_one(p)
+    got = db.get("posts", p["id"])
+    assert got["status"] == "cancelled" and "gone" in got["error"]
+    assert not publish.eligible(db.get("clips", c["id"]))

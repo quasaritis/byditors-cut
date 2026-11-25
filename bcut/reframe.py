@@ -189,6 +189,41 @@ def _motion(imgs: list[np.ndarray], box) -> tuple[float, float]:
     return (float(np.mean(ins)) if ins else 0.0, float(np.mean(outs)) if outs else 0.0)
 
 
+def _remembered_cams(src: Path, dets) -> list[dict]:
+    """The cam found earlier in this same video or live (streamers don't move their cam), if a face is still
+    in it now. Spotting a cam needs gameplay moving around it; a calm stretch can miss it otherwise."""
+    from . import db
+
+    try:
+        box = (db.kv_get("cam_memory", {}) or {}).get(str(Path(src).parent))
+    except Exception:  # noqa: BLE001
+        return []
+    if not box:
+        return []
+    x, y, w, h = box
+    hits = sum(1 for faces in dets if any(x <= fx + fw / 2 <= x + w and y <= fy + fh / 2 <= y + h
+                                          for fx, fy, fw, fh in faces))
+    if hits < 0.3 * max(1, len(dets)):
+        return []
+    inside = [f for faces in dets for f in faces if x <= f[0] + f[2] / 2 <= x + w and y <= f[1] + f[3] / 2 <= y + h]
+    cx = float(np.median([f[0] + f[2] / 2 for f in inside]))
+    cy = float(np.median([f[1] + f[3] / 2 for f in inside]))
+    return [{"box": tuple(box), "face": (cx, cy)}]
+
+
+def _remember_cams(src: Path, cams: list[dict]) -> None:
+    from . import db
+
+    try:
+        mem = db.kv_get("cam_memory", {}) or {}
+        mem[str(Path(src).parent)] = [round(float(v), 4) for v in cams[0]["box"]]
+        if len(mem) > 60:
+            mem = dict(list(mem.items())[-60:])
+        db.kv_set("cam_memory", mem)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def find_cams(dets, imgs, force: bool = False) -> list[dict]:
     """Webcam overlays in the clip: [{"box": (x, y, w, h), "face": (cx, cy)}] in 0..1 of the frame.
     Empty if this doesn't look like a facecam stream. A cam needs three straight border lines (or frame edges)
@@ -553,15 +588,39 @@ def analyse(src: Path, start: float, end: float, src_w: int, src_h: int, cuts: l
     part = _part_px(o.get("part"), src_w, src_h)
     plan = None
     text = textscan.scan(imgs, list(ts))
-    # a video with its own wide subtitles stays whole (cropping would slice them): no cam split for it
+    # a video with its own wide subtitles stays whole (cropping would slice them)
     subbed = want == "auto" and text.get("captions") and text.get("width", 0) > 0.9 * (src_h * 9 / 16) / src_w
-    if want in ("auto", "split") and o["cam"] != "off" and src_h < src_w * 1.2 and not subbed:
+    if subbed and o["cam"] != "off" and src_h < src_w * 1.2 and o.get("cam_find") != "draw":
+        # ...but the streamer's cam still gets its own big box above the whole game, instead of a small picture
+        # floating in a blurred frame
+        cams = find_cams(dets, imgs, force=False) or _remembered_cams(src, dets)
+        if cams:
+            _remember_cams(src, cams)
+            c = cams[0]
+            bw, bh = c["box"][2] * src_w, c["box"][3] * src_h
+            game_h = OUT_W * src_h / src_w
+            cam_y = 150                                  # under the platform's top bar
+            w = 0.72
+            h = w * OUT_W * bh / max(1.0, bw)
+            room = 1500 - game_h - 30 - cam_y            # the game ends above the caption/buttons zone
+            if h > room:                                 # a tall cam: narrower, so both still fit
+                w = max(0.3, w * room / h)
+                h = w * OUT_W * bh / max(1.0, bw)
+            plan = {"mode": "split", "cam_pos": "corner", "framing": "blur",
+                    "cams": [{"box": [round(v, 4) for v in c["box"]], "face": [round(v, 4) for v in c["face"]]}],
+                    "corner": {"x": round((1 - w) / 2, 3), "y": round(cam_y / OUT_H, 3), "w": round(w, 3)},
+                    "game_y": int(cam_y + h + 30),
+                    "round": int(o.get("round", 28)), "border": int(o.get("border", 4)),
+                    "border_color": str(o.get("border_color") or "#FFFFFF")}
+    if plan is None and want in ("auto", "split") and o["cam"] != "off" and src_h < src_w * 1.2 and not subbed:
         drawn = o.get("cam_box") if o.get("cam_find") == "draw" else None
         if drawn:
             x, y, w, h = drawn
             cams = [{"box": (x, y, w, h), "face": (x + w / 2, y + h * 0.45)}]
         else:
-            cams = find_cams(dets, imgs, force=(want == "split"))
+            cams = find_cams(dets, imgs, force=(want == "split")) or _remembered_cams(src, dets)
+            if cams:
+                _remember_cams(src, cams)
         if cams or want == "split":
             cams = cams or [{"box": (0.0, 0.0, 0.3, 0.33), "face": (0.15, 0.15)}]
             plan = {"mode": "split", "cams": [{"box": [round(v, 4) for v in c["box"]],
@@ -824,8 +883,8 @@ def panels(plan: dict, src_w: int, src_h: int, t: float = 0.0) -> list[dict]:
                 ax, ay, aw, ah = _game_area(plan, src_w, src_h)
                 if plan.get("framing") == "blur":
                     gh = OUT_W * ah / aw
-                    game = {"src": (ax, ay, aw, ah), "out": (0, (OUT_H - gh) / 2 - 60, OUT_W, gh), "name": "g",
-                            "fill": True}
+                    gy = plan.get("game_y", (OUT_H - gh) / 2 - 60)
+                    game = {"src": (ax, ay, aw, ah), "out": (0, gy, OUT_W, gh), "name": "g", "fill": True}
                 else:
                     zw = min(aw, ah * OUT_W / ZOOM_H)
                     zh = min(ah, zw * ZOOM_H / OUT_W)
@@ -906,7 +965,7 @@ def _crop(rect, src_w, src_h, name: str = "") -> str:
     return f"crop{'@' + name if name else ''}={w}:{h}:{x}:{y}"
 
 
-BLUR_BG = "boxblur=28:3,eq=brightness=-0.12"
+BLUR_BG = "boxblur=28:3,eq=brightness=-0.05:saturation=1.25"
 
 
 def _hexc(c: str) -> str:
@@ -1011,6 +1070,10 @@ def text_spots(plan: dict, src_w: int = 1920, src_h: int = 1080) -> dict:
     moves them off any face that is there at the time."""
     mode = ALIASES.get(plan.get("mode"), plan.get("mode"))
     if mode == "split" and plan.get("cam_pos") == "corner":
+        if plan.get("game_y") is not None:      # cam box above the whole game: the text goes under the game
+            ew, eh = _eff(plan, src_w, src_h)
+            below = plan["game_y"] + OUT_W * eh / max(1, ew)
+            return {"cap": int(min(1430, below + 75)), "hook": int(min(1430, below + 75))}
         return {"cap": 1300, "hook": 330}
     if mode == "split":
         top = split_geometry(plan, src_w, src_h)["top"]

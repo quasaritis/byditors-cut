@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 from datetime import datetime, timedelta
 
 from .. import config, db, learn
@@ -104,6 +105,11 @@ def post_one(p: dict) -> None:
     if not clip or not acc:
         db.update("posts", p["id"], status="failed", error="Clip or account was deleted")
         return
+    if not Path(clip["file"]).exists():
+        # the video was deleted from the clips folder: nothing to upload, so don't keep retrying
+        db.update("posts", p["id"], status="cancelled", error="The clip's video file is gone")
+        db.log(f"Skipped posting '{clip.get('title') or clip['id']}': its video file was deleted", "warn")
+        return
     ok, why = allowed(clip)
     if not ok:
         db.update("posts", p["id"], status="failed", error=why)
@@ -151,6 +157,8 @@ def eligible(clip: dict) -> bool:
     clips you approved yourself."""
     g = clip.get("guard") or {}
     if clip["state"] not in ("new", "approved", "queued"):
+        return False
+    if not Path(clip.get("file") or "").exists():
         return False
     if g.get("approved_by_you"):
         return allowed(clip)[0]

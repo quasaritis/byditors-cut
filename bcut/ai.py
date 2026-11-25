@@ -155,6 +155,24 @@ def list_models(provider: str, key: str, base_url: str = "") -> list[str]:
     return sorted(set(ids), key=lambda i: (not any(k in i for k in ("flash", "mini", "haiku", "instant", "8b")), i))
 
 
+class TooLarge(RuntimeError):
+    """The request is bigger than the service allows in one go (Groq's free tier: 8,000 tokens a minute)."""
+
+
+# tokens one request may use (prompt plus answer) on each service; the free Groq tier counts both against
+# 8,000 tokens a minute, so one request has to stay under that
+BUDGET = {"groq": 7200}
+
+
+def budget() -> int:
+    return BUDGET.get(_active()[0]["provider"], 60000)
+
+
+def tokens(text: str) -> int:
+    """A rough token count: about 3.3 characters a token for mixed Hinglish/English text."""
+    return int(len(text) / 3.3) + 1
+
+
 def ask_json(system: str, user: str, max_tokens: int = 2500, temperature: float = 0.4):
     """Ask for a JSON answer. Free tiers allow only a few requests a minute, so a "too many requests" answer is
     waited out and retried. Raises on failure so the caller can fall back to the no-AI path."""
@@ -164,15 +182,27 @@ def ask_json(system: str, user: str, max_tokens: int = 2500, temperature: float 
         try:
             return _ask_json(system, user, max_tokens, temperature, cur)
         except httpx.HTTPStatusError as e:
+            body = getattr(e.response, "text", "") or ""
             if (e.response.status_code == 429 and not on_backup and _ready(backup())
                     and _daily_limit(e)):
                 _rest(e)                   # the main service is done for today: carry on with the backup
                 continue
-            if e.response.status_code == 400 and "json_validate_failed" in e.response.text and attempt < 2:
-                max_tokens = max(800, max_tokens * 2)     # a reasoning model ran out of room before the JSON
+            if e.response.status_code == 413 or "request too large" in body.lower():
+                raise TooLarge(body[:200]) from e
+            if e.response.status_code == 400 and "json_validate_failed" in body and attempt < 2:
+                # a reasoning model ran out of room before the JSON: more room, within what one request may use
+                room = budget() - tokens(system + user) - 50
+                if room <= max_tokens:
+                    raise TooLarge("no room left for a longer answer") from e
+                max_tokens = min(room, max(800, max_tokens * 2))
                 continue
+            if e.response.status_code == 429 and "tokens per minute" in body.lower() and \
+                    "requested" in body.lower():
+                m = re.search(r"Limit (\d+), Used \d+, Requested (\d+)", body)
+                if m and int(m.group(2)) > int(m.group(1)):
+                    raise TooLarge(body[:200]) from e        # waiting can never make this fit
             if e.response.status_code in (429, 500, 503) and attempt < 3:
-                time.sleep(float(e.response.headers.get("retry-after") or 0) or 15 * (attempt + 1))
+                time.sleep(min(70.0, float(e.response.headers.get("retry-after") or 0) or 15 * (attempt + 1)))
                 continue
             raise
         except httpx.TimeoutException:

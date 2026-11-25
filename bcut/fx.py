@@ -282,29 +282,39 @@ def events(file: Path, start: float, dur: float, built: dict, st: dict, has_audi
         curve = _smooth(_curve(media.read_audio(file, start, dur)), 6)
         if len(curve):
             med = float(np.median(curve))
-            gap = int(4.0 / HOP)
+            gap = int(3.0 / HOP)
             order = np.argsort(curve)[::-1]
             chosen: list[int] = []
             lo = int(0.6 / HOP)
             hi = len(curve) - int(1.0 / HOP)
             rw = built.get("rewind")
             fzw = built.get("freeze")
-            limit = max(1, int(dur / 7))
-            for i in order:
-                if curve[i] < med + 8 or len(chosen) >= limit:
-                    break
-                if i < lo or i > hi or any(abs(i - j) < gap for j in chosen):
-                    continue
+            # something moves every few seconds: about one push-in per 4.5 s, on the loudest moments first
+            limit = max(1, int(dur / 4.5))
+
+            def free(i: int) -> bool:
                 t = i * HOP
-                if rw and rw[0] - 0.4 <= t <= rw[1] + 0.3:
-                    continue
-                if fzw and fzw[0] - 1.5 <= t <= fzw[1] + 1.0:
-                    continue
-                chosen.append(i)
+                return (lo <= i <= hi and not any(abs(i - j) < gap for j in chosen)
+                        and not (rw and rw[0] - 0.4 <= t <= rw[1] + 0.3)
+                        and not (fzw and fzw[0] - 1.5 <= t <= fzw[1] + 1.0))
+            for i in order:
+                if curve[i] < med + 6 or len(chosen) >= limit:
+                    break
+                if free(i):
+                    chosen.append(i)
+            # a calm stretch longer than ~7 s still gets a gentle push on its liveliest moment
+            for i in order:
+                if len(chosen) >= limit:
+                    break
+                if curve[i] < med and len(chosen) >= int(dur / 8):
+                    break
+                if free(i) and not any(abs(i - j) < int(7.0 / HOP) for j in chosen):
+                    chosen.append(i)
+            sizes = [1.1, 1.13, 1.08]
             for k, i in enumerate(sorted(chosen, key=lambda j: -curve[j])):
                 t = round(float(max(0.0, i * HOP - 0.15)), 3)       # land just before the peak
                 big = bool(k == 0 and curve[i] > med + 12)
-                punches.append({"t": t, "zoom": 1.16 if big else 1.1, "shake": big})
+                punches.append({"t": t, "zoom": 1.16 if big else sizes[k % 3], "shake": big})
             if fzw:      # the freeze pushes in on the moment
                 punches.append({"t": fzw[0], "zoom": 1.2, "shake": False})
             punches.sort(key=lambda p: p["t"])
@@ -321,15 +331,21 @@ def events(file: Path, start: float, dur: float, built: dict, st: dict, has_audi
         if rw:
             sounds.append({"t": max(0.0, rw[0] - 0.05), "name": "rewind", "db": -10})
             sounds.append({"t": round(max(0.0, rw[1] - 0.18), 3), "name": "whoosh", "db": -12})
-    return {"punches": punches, "sounds": [s for s in sounds if sound(s["name"])]}
+    return {"punches": punches, "sounds": [s for s in sounds if sound(s["name"])], "drift": bool(st["punch"])}
 
 
-def zoom_filter(punches: list[dict], centre) -> str:
+def zoom_filter(punches: list[dict], centre, dur: float = 0.0, drift: float = 0.0) -> str:
     """ffmpeg filters that push in on each punch (toward `centre(t)` -> (fx, fy) in 0..1) and shake on the
-    big one. Works on the finished 1080x1920 picture, before captions go on."""
-    if not punches:
+    big one, over a slow push-in across the whole clip (`drift`, e.g. 0.05 = 5% by the end) so the picture is
+    never dead still. Works on the finished 1080x1920 picture, before captions go on."""
+    if not punches and not (drift and dur):
         return ""
-    z_terms, fx_terms, fy_terms, shake = [], [], [], []
+    base = f"{drift:.3f}*min(t/{max(dur, 1):.2f},1)" if drift and dur else "0"
+    if not punches:
+        z = f"(1+{base})"
+        return (f"scale=w='2*trunc(540*{z})':h='2*trunc(960*{z})':eval=frame:flags=bicubic,"
+                f"crop=1080:1920:x='(iw-1080)/2':y='(ih-1920)*0.45'")
+    z_terms, fx_terms, fy_terms, shake = [base], [], [], []
     for p in punches:
         a = p["t"]
         amt = p["zoom"] - 1

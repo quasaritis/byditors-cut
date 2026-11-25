@@ -246,6 +246,8 @@ def build_ass(words: list[dict], start: float, end: float, hook: str, credit: st
         spots["cap"] = int(cs["y"] * 1920)
     if hs.get("y") is not None:
         spots["hook"] = int(hs["y"] * 1920)
+    # cam box above the whole game: the only free room is under the game, a bit into the buttons zone
+    low_hi = 1720 if plan and plan.get("game_y") is not None else SAFE_BOTTOM
     cap_x = 540 if cs.get("x") is None else cs["x"] * 1080          # where the middle of a line sits
     head_x = 540 if hs.get("x") is None else hs["x"] * 1080
     spoken_text = " ".join(w["w"] for w in words if start - 0.05 <= w["s"] < end)
@@ -293,7 +295,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         hw = max(_width(ln, hook_size, hratio, hfont) for ln in lines) / 2
         pad_x, pad_y = (0.36 * hook_size * 0.5, 0.22 * hook_size * 0.5) if h_box else (0, 0)
         hx = round(min(1080 - hw - pad_x - 20, max(hw + pad_x + 20, head_x))) if hs["look"] != "banner" else 540
-        hy = _place(spots["hook"], 0, hold, hh + pad_y, hw + pad_x, faces, None, cx=hx, pin=hs.get("pin", False))
+        hy = _place(spots["hook"], 0, hold, hh + pad_y, hw + pad_x, faces, None, cx=hx, pin=hs.get("pin", False),
+                    hi=low_hi)
         fade_out = "\\fad(0,160)" if not hs["whole"] else ""
         if h_box:
             top, bottom = _box_v(hfont, hook_size, hupper)
@@ -349,7 +352,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         lx = min(1080 - total * fit / 2 - 20, max(total * fit / 2 + 20, cap_x))
         y = _place(spots["cap"], g0, g_end - start, half_h * fit, total * fit / 2,
                    faces + (hook_box if g0 < hook_hold + 0.2 and not cs.get("pin") else []), prev,
-                   cx=lx, pin=cs.get("pin", False))
+                   cx=lx, pin=cs.get("pin", False), hi=low_hi)
         prev = y
         lit_c = lit_main
         if cs["lit"] == "#FFE100":     # the default yellow: a second speaker gets blue
@@ -469,7 +472,10 @@ def render(src: Path, out: Path, start: float, end: float, plan: dict, src_w: in
         moves = reframe.commands(plan, dur, src_w, src_h)
         if moves:
             (work / "moves.txt").write_text(moves, encoding="utf-8")
-        zoom = fxmod.zoom_filter(fx.get("punches") or [], _face_centre(plan))
+        # a slow push-in across the clip, so the picture is never dead still (not on already-vertical video,
+        # where it would crop the creator's own framing)
+        drift = 0.0 if plan.get("mode") == "fit" or not fx.get("drift", False) else 0.05
+        zoom = fxmod.zoom_filter(fx.get("punches") or [], _face_centre(plan), dur=dur, drift=drift)
         mask = reframe.corner_mask(plan, src_w, src_h, work / "mask.png") if reframe.needs_mask(plan) else None
         graph = (reframe.filter_graph(plan, src_w, src_h, has_cmds=bool(moves), mask_input=1 if mask else None) +
                  ";[v]" + ("eq=contrast=1.06:saturation=1.14:gamma=0.98," if grade else "") +

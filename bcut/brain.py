@@ -11,7 +11,7 @@ import re
 
 import numpy as np
 
-from . import ai, config, signals, transcribe
+from . import ai, config, db, signals, transcribe
 
 SYSTEM_CLIPS = (
     "You are a senior short-form video editor who has cut thousands of viral Reels, Shorts and TikToks from "
@@ -211,17 +211,42 @@ def by_ai(words: list[dict], sig: dict, duration: float, title: str, who: str, n
     lines = transcribe.lines(words)
     if not lines:
         raise RuntimeError("No transcript")
-    chunk_sec = 900
     found: list[dict] = []
-    t = 0.0
-    while t < duration:
-        part = [ln for ln in lines if t <= ln["s"] < t + chunk_sec]
-        t += chunk_sec
-        if len(part) < 4:
-            continue
+    answer = 2000                                   # room for the answer (and a reasoning model's thinking)
+    room = ai.budget() - answer - ai.tokens(SYSTEM_CLIPS) - 700
+    # pieces of the transcript small enough for one request (Groq's free tier allows ~7,000 tokens), and at
+    # most 15 minutes each so the AI looks closely
+    chunks, cur, used = [], [], 0
+    for ln in lines:
+        cost = ai.tokens(ln["text"]) + 9
+        if cur and (used + cost > room or ln["s"] - cur[0]["s"] > 900):
+            chunks.append(cur)
+            cur, used = [], 0
+        cur.append(ln)
+        used += cost
+    if cur:
+        chunks.append(cur)
+    per = max(2, round(n * 1.5 / max(1, len(chunks))) + 1)
+    todo = [c for c in chunks if len(c) >= 4]
+    results = []
+    last_err: Exception | None = None
+    while todo:
+        part = todo.pop(0)
         log(f"AI reading {_fmt(part[0]['s'])}–{_fmt(part[-1]['e'])}")
-        res = ai.ask_json(SYSTEM_CLIPS, _chunk_prompt(part, sig, title, who, max(2, n // 2 + 1), min_len, max_len,
-                                                      extra=extra))
+        try:
+            results.append((part, ai.ask_json(SYSTEM_CLIPS, _chunk_prompt(part, sig, title, who, per, min_len,
+                                                                          max_len, extra=extra), max_tokens=answer)))
+        except ai.TooLarge:
+            if len(part) < 8:
+                continue
+            half = len(part) // 2
+            todo[:0] = [part[:half], part[half:]]       # too big for one go: read it in two halves
+        except Exception as e:  # noqa: BLE001  one piece failing shouldn't throw away the others
+            log(f"AI couldn't read {_fmt(part[0]['s'])}–{_fmt(part[-1]['e'])}: {str(e)[:120]}")
+            last_err = e
+    if not results and last_err is not None:
+        raise last_err
+    for part, res in results:
         for c in (res.get("clips") or [])[:8]:
             try:
                 s, e = float(c["start"]), float(c["end"])
@@ -330,6 +355,7 @@ def _find_clips(words: list[dict], sig: dict, duration: float, title: str, who: 
                 return clips
         except Exception as e:  # noqa: BLE001
             log(f"AI pick failed, using signals instead: {str(e)[:160]}")
+            db.log(f"The AI couldn't pick clips ({str(e)[:140]}); picked by loudness and chat instead", "warn")
     if ai.enabled() and words and focus is not None:
         try:  # live: let the AI place the edges, but only around the trigger
             near = [w for w in words if focus - 45 <= w["s"] <= focus + 25]
@@ -338,7 +364,20 @@ def _find_clips(words: list[dict], sig: dict, duration: float, title: str, who: 
                 return clips
         except Exception as e:  # noqa: BLE001
             log(f"AI pick failed, using signals instead: {str(e)[:160]}")
-    return by_signals(sig, words, duration, n, min_len, max_len, focus)
+    clips = by_signals(sig, words, duration, n, min_len, max_len, focus)
+    if ai.enabled() and words:
+        # picked by loudness and chat, but each still gets a real hook and title from the AI (small requests)
+        for c in clips:
+            near = [w for w in words if c["start"] - 0.2 <= w["s"] <= c["end"]]
+            if len(near) < 4:
+                continue
+            try:
+                c.update(_hook_for(near, title, who, extra))
+                c["hook_style"] = ""
+            except Exception as e:  # noqa: BLE001
+                log(f"AI hook failed: {str(e)[:120]}")
+                break
+    return clips
 
 
 # ---------------------------------------------------------------- captions per platform
