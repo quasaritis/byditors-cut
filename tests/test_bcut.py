@@ -1102,3 +1102,20 @@ def test_render_again_keeps_the_hand_placed_captions(tmp_path):
     assert again["guard"]["look_over"]["captions"]["x"] == 0.35
     back = pipeline.rerender(clip["id"], over={})
     assert back["guard"]["look_over"] == {}
+
+
+def test_removing_an_account_cancels_its_waiting_posts(client):
+    acc = db.insert("accounts", {"id": "a_rm", "platform": "youtube", "name": "chan", "secrets": {}, "settings": {},
+                                 "created": time.time()})
+    keep = db.insert("accounts", {"id": "a_keep", "platform": "instagram", "name": "ig", "secrets": {},
+                                  "settings": {}, "created": time.time()})
+    db.insert("streamers", {"id": "s_rm", "name": "X", "channels": {}, "created": time.time(), "seen": [],
+                            "status": {}, "post_to": [acc["id"], keep["id"]]})
+    for pid, st in (("prm1", "scheduled"), ("prm2", "posted")):
+        db.insert("posts", {"id": pid, "clip_id": "c", "account_id": acc["id"], "status": st, "due": time.time(),
+                            "created": time.time(), "updated": time.time()})
+    r = client.delete("/api/accounts/a_rm")
+    assert r.status_code == 200 and r.json()["cancelled"] == 1
+    assert db.get("accounts", "a_rm") is None
+    assert db.get("posts", "prm1")["status"] == "cancelled" and db.get("posts", "prm2")["status"] == "posted"
+    assert db.get("streamers", "s_rm")["post_to"] == ["a_keep"]

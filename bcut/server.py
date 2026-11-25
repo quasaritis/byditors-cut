@@ -965,11 +965,25 @@ def edit_account(aid: str, b: dict = Depends(_body)):
     return _acc_public(db.update("accounts", aid, settings=st))
 
 
+PLATFORM_NAMES = {"instagram": "Instagram", "youtube": "YouTube", "tiktok": "TikTok", "facebook": "Facebook"}
+
+
 @app.delete("/api/accounts/{aid}")
 def delete_account(aid: str):
-    _need("accounts", aid)
+    """Remove a connected account: its waiting posts are cancelled and no streamer posts to it any more.
+    Posts already on the platform stay there."""
+    a = _need("accounts", aid)
+    cancelled = 0
+    for p in db.query("SELECT id FROM posts WHERE account_id=? AND status IN ('scheduled','failed')", (aid,)):
+        db.update("posts", p["id"], status="cancelled", error="Account removed")
+        cancelled += 1
+    for s in db.query("SELECT id, post_to_json FROM streamers"):
+        if aid in (s.get("post_to") or []):
+            db.update("streamers", s["id"], post_to=[x for x in s["post_to"] if x != aid])
     db.delete("accounts", aid)
-    return {"ok": True}
+    db.log(f"Removed {PLATFORM_NAMES.get(a['platform'], a['platform'])} account {a.get('name', '')}"
+           + (f"; cancelled {cancelled} waiting post{'s' if cancelled != 1 else ''}" if cancelled else ""))
+    return {"ok": True, "cancelled": cancelled}
 
 
 # ---------------------------------------------------------------- posting queue
